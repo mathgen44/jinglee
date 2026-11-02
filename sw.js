@@ -1,7 +1,7 @@
 // Service worker : met l'application en cache pour un fonctionnement hors-ligne.
 // Les sons ne passent pas par ici : ils sont stockés dans IndexedDB.
 
-const CACHE = 'jinglee-v1.2.0';
+const CACHE = 'jinglee-v1.3.0';
 const FILES = [
   './',
   'index.html',
@@ -26,7 +26,13 @@ const FILES = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' : on va chercher les fichiers sur le réseau, sans repasser par le cache HTTP du navigateur
+  // (sinon une nouvelle version peut se mettre en cache avec les anciens fichiers).
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {

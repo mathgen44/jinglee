@@ -26,7 +26,7 @@ export class Show {
     if (playing.length && pad.retrigger !== 'overlap') {
       switch (pad.retrigger) {
         case 'fade':
-          playing.forEach(v => v.stop(pad.stopFade || this.getProject().settings.fadeAll));
+          playing.forEach(v => v.stop(pad.fadeOut || this.getProject().settings.fadeAll));
           return;
         case 'pause': {
           const v = playing[playing.length - 1];

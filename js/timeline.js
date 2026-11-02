@@ -38,6 +38,27 @@ function computePeaks(buffer) {
   return peaks;
 }
 
+// Auto-cue : repère le premier et le dernier passage au-dessus du seuil (silence avant/après).
+// Renvoie { start, end } en secondes, ou null si le fichier est entièrement silencieux.
+export function detectBounds(buffer, thresholdDb) {
+  const thr = Math.pow(10, (thresholdDb == null ? -50 : thresholdDb) / 20);
+  const chans = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+  const len = buffer.length;
+  const loud = i => chans.some(d => d[i] > thr || d[i] < -thr);
+  let a = 0;
+  while (a < len && !loud(a)) a++;
+  if (a >= len) return null;
+  let b = len - 1;
+  while (b > a && !loud(b)) b--;
+  const sr = buffer.sampleRate;
+  // Petites marges : ne pas mordre l'attaque, laisser la queue de résonance.
+  return {
+    start: Math.max(0, a / sr - 0.005),
+    end: Math.min(buffer.duration, b / sr + 0.05)
+  };
+}
+
 export function peaksFor(fileId, buffer) {
   let p = peaksCache.get(fileId);
   if (!p) { p = computePeaks(buffer); peaksCache.set(fileId, p); }

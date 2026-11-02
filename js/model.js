@@ -68,8 +68,9 @@ export function newPad(tabId, slot, fileId, name, duration) {
   return Object.assign(defaultSound(fileId, name, duration), {
     tabId: tabId,
     slot: slot,
-    retrigger: 'fade', // second appui pendant la lecture
-    stopFade: 3        // durée du fondu de ce second appui (s), distincte du fondu de fin de fichier
+    // Second appui pendant la lecture. Le fondu dure « fondu de fin » (fadeOut),
+    // ou la durée du bouton général « Fondu » si celui-ci vaut 0.
+    retrigger: 'fade'
   });
 }
 

@@ -4,7 +4,7 @@
 import { h, modal, fmtTime, parseNum, numStr, pickAudio, toast } from './dom.js';
 import { COLORS, RETRIGGER, FOLLOW, CUE_KINDS, clone } from './model.js';
 import { dbToGain, gainToDb } from './audio.js';
-import { Timeline } from './timeline.js';
+import { Timeline, detectBounds } from './timeline.js';
 
 // app : { engine, importFile(file), onSave(item), onDelete(item), onDuplicate(item), onMove(item), tabs, cues }
 export function openEditor(app, original, type) {
@@ -93,9 +93,8 @@ export function openEditor(app, original, type) {
 
   // ---- Mode de fin (pads) et boucle ----
 
-  const stopFadeInput = num(item.stopFade != null ? item.stopFade : 3);
-  const stopFadeRow = h('div', { class: 'ctrl stop-fade' }, h('span', { text: 'Durée du fondu' }), stopFadeInput, h('span', { text: 's' }));
   const modeGroup = h('div', { class: 'icon-group' });
+  const modeDesc = h('div', { class: 'muted small' });
   function drawModes() {
     modeGroup.innerHTML = '';
     Object.keys(RETRIGGER).forEach(k => {
@@ -105,17 +104,20 @@ export function openEditor(app, original, type) {
         title: desc,
         onclick: () => {
           item.retrigger = k;
-          if (k === 'fade' && !(parseNum(stopFadeInput.value, 0) > 0)) stopFadeInput.value = '3';
+          // Le fondu du second appui utilise le fondu de fin : on le règle à 3 s s'il est vide.
+          if (k === 'fade' && !(parseNum(fadeOutInput.value, 0) > 0)) {
+            fadeOutInput.value = '3';
+            readPoints();
+            if (timeline) timeline.draw();
+          }
           drawModes();
         }
       }, h('span', { class: 'icon-btn-icon', text: icon }), h('span', { class: 'icon-btn-label', text: label })));
     });
-    stopFadeRow.style.display = item.retrigger === 'fade' ? '' : 'none';
-    modeDesc.textContent = 'Second appui pendant la lecture : ' + RETRIGGER[item.retrigger][2].toLowerCase() + '.';
+    modeDesc.textContent = 'Toucher le pad pendant la lecture : ' + RETRIGGER[item.retrigger][2].toLowerCase() +
+      (item.retrigger === 'fade' ? ' (durée : fondu de fin, ou celle du bouton Fondu s’il vaut 0).' : '.');
   }
-  const modeDesc = h('div', { class: 'muted small' });
   const loopBtn = toggle('⟲', 'Boucle', !!item.loop, v => { item.loop = v; });
-  if (!isCue) drawModes();
 
   // ---- Fichier, écoute et frise ----
 
@@ -162,14 +164,29 @@ export function openEditor(app, original, type) {
     outInput.value = item.outPoint > 0 ? numStr(item.outPoint) : '';
   }
 
+  let waveBuffer = null;
   function loadWave() {
     if (!timeline) return;
+    waveBuffer = null;
     if (!item.fileId) { timeline.setBuffer(null, null); return; }
     app.engine.load(item.fileId).then(buf => {
       if (!item.duration) item.duration = buf.duration;
+      waveBuffer = buf;
       timeline.setBuffer(item.fileId, buf);
     }, () => timeline.setBuffer(null, null));
   }
+
+  // Auto-cue : début et fin calés sur le son, en retirant le silence avant et après.
+  const autoBtn = h('button', { class: 'icon-btn auto-cue', title: 'Retirer le silence au début et à la fin', onclick: () => {
+    if (!waveBuffer) { toast('Forme d’onde pas encore chargée'); return; }
+    const b = detectBounds(waveBuffer, -50);
+    if (!b) { toast('Ce fichier semble entièrement silencieux'); return; }
+    item.inPoint = Math.round(b.start * 100) / 100;
+    item.outPoint = b.end >= item.duration - 0.01 ? 0 : Math.round(b.end * 100) / 100;
+    syncPointInputs();
+    timeline.draw();
+    toast('Auto-cue : début ' + fmtTime(item.inPoint, true) + ', fin ' + fmtTime(item.outPoint || item.duration, true));
+  } }, h('span', { class: 'icon-btn-icon', text: '⇤⇥' }), h('span', { class: 'icon-btn-label', text: 'Auto-cue' }));
 
   if (isSound) {
     timeline = new Timeline(item, syncPointInputs);
@@ -264,7 +281,6 @@ export function openEditor(app, original, type) {
       item.delay = Math.max(0, parseNum(delayInput.value, 0));
       item.stopOthers = stopOthersInput.checked ? Math.max(0, parseNum(stopOthersFade.value, 0)) : -1;
     } else {
-      item.stopFade = Math.max(0.1, parseNum(stopFadeInput.value, 3));
       if (tabSelect && tabSelect.value !== item.tabId) { item.tabId = tabSelect.value; item.slot = -1; }
     }
   }
@@ -286,28 +302,26 @@ export function openEditor(app, original, type) {
     body.appendChild(section('Volume', h('div', { class: 'ctrl' }, volInput, volLabel, duckBtn)));
 
     if (!isCue) {
-      body.appendChild(section('Mode de fin',
+      drawModes();
+      body.appendChild(section('Second appui',
         h('div', { class: 'mode-row' }, modeGroup, h('div', { class: 'mode-sep' }), loopBtn),
-        stopFadeRow,
         modeDesc
       ));
     } else {
       body.appendChild(section('Lecture', h('div', { class: 'mode-row' }, loopBtn)));
     }
 
-    body.appendChild(section('Début et fin',
+    // Début, fondus et fin sur une seule ligne, dans l'ordre de la frise.
+    const point = (label, input) => h('label', { class: 'point' }, h('span', { text: label }), h('div', { class: 'ctrl' }, input, h('span', { text: 's' })));
+    body.appendChild(section('Début, fin et fondus',
       h('div', { class: 'row wrap file-row' }, fileLabel, h('div', { class: 'spacer' }), replaceBtn, previewBtn, posLabel),
       timeline.el,
-      h('div', { class: 'row wrap points' },
-        h('label', { class: 'ctrl' }, h('span', { text: 'Début' }), inInput, h('span', { text: 's' })),
-        h('label', { class: 'ctrl' }, h('span', { text: 'Fin' }), outInput, h('span', { text: 's' }))
-      )
-    ));
-
-    body.appendChild(section('Fondus',
-      h('div', { class: 'row wrap points' },
-        h('label', { class: 'ctrl' }, h('span', { text: 'Entrée' }), fadeInInput, h('span', { text: 's' })),
-        h('label', { class: 'ctrl' }, h('span', { text: 'Fin du son' }), fadeOutInput, h('span', { text: 's' }))
+      h('div', { class: 'points' },
+        point('Début', inInput),
+        point('Fondu d’entrée', fadeInInput),
+        point('Fondu de fin', fadeOutInput),
+        point('Fin', outInput),
+        autoBtn
       )
     ));
 

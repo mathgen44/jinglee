@@ -10,7 +10,7 @@ import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
 import { setupInstallPrompt } from './install.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -526,7 +526,7 @@ function renderNowPlaying() {
       ),
       h('div', { class: 'np-btns' },
         h('button', { class: 'btn small', text: v.state === 'paused' ? '▶' : '❚❚', title: 'Pause / reprise', onclick: () => { if (v.state === 'paused') v.resume(); else v.pause(); } }),
-        h('button', { class: 'btn small', text: '◢', title: 'Fondu de sortie', onclick: () => v.stop(s.stopFade || s.fadeOut || state.project.settings.fadeAll) }),
+        h('button', { class: 'btn small', text: '◢', title: 'Fondu de sortie', onclick: () => v.stop(s.fadeOut || state.project.settings.fadeAll) }),
         h('button', { class: 'btn small danger', text: '■', title: 'Arrêter', onclick: () => v.stop(0.03) })
       )
     ));
@@ -948,12 +948,34 @@ function bindStatic() {
   updateClock();
 }
 
+// Mises à jour : une application installée restée ouverte ne vérifie presque jamais s'il existe
+// une nouvelle version. On vérifie au démarrage et à chaque retour au premier plan, puis on propose
+// de recharger (jamais automatiquement : un son peut être en cours).
+function setupUpdates() {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || document.querySelector('.update-banner')) return;
+    const bar = h('div', { class: 'update-banner' },
+      h('span', { text: 'Une nouvelle version de Jinglee est disponible.' }),
+      h('button', { class: 'btn small primary', text: 'Mettre à jour', onclick: () => {
+        if (engine.activeVoices().length && !confirm('Des sons sont en cours : recharger les arrêtera. Continuer ?')) return;
+        flushSave().then(() => location.reload(), () => location.reload());
+      } }),
+      h('button', { class: 'btn small ghost', text: 'Plus tard', onclick: () => bar.remove() })
+    );
+    document.body.appendChild(bar);
+  });
+}
+
 async function boot() {
   bindStatic();
   // Pas de cache hors-ligne en développement local : on veut toujours la dernière version des fichiers.
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  if ('serviceWorker' in navigator && location.protocol === 'https:') setupUpdates();
   requestPersistence();
   setupInstallPrompt();
   try {
