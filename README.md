@@ -11,6 +11,8 @@ Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le 
   Un second toucher arrête le son, l'arrête en fondu, le relance, le met en pause ou superpose une lecture (au choix pour chaque pad).
 - **Conduite** avec un grand bouton **GO** : cue en attente surlignée, notes de régie, enchaînements automatiques
   (« avec la précédente » ou « à la fin de la précédente », avec délai), actions « fondu général » et « arrêt général ».
+- **Lignes de texte** dans la conduite (réplique, mouvement, repère) : GO les saute, et le texte qui annonce la cue en attente est surligné.
+- **Mode de transition** dans la barre du haut : superposer les sons, fondu enchaîné (durée réglable) ou couper le précédent.
 - **Bandeau « En cours »** : tous les sons qui jouent, avec temps restant, pause, fondu et arrêt individuels.
 - **Réglages par son** : volume, point de début et de fin, fondu d'entrée et de sortie, boucle, **ducking**
   (baisse automatique des autres sons), arrêt des autres sons au départ d'une cue.
@@ -51,8 +53,8 @@ python -m http.server 8642
 
 Puis ouvrez http://localhost:8642.
 
-Le service worker met l'application en cache : après une modification, changez la constante `CACHE` dans `sw.js`
-(c'est aussi ce qui déclenche la mise à jour chez les utilisateurs), ou désactivez le cache dans les outils de développement.
+Le service worker (cache hors-ligne) n'est activé qu'en HTTPS, donc pas en local. À chaque version publiée,
+changez la constante `CACHE` dans `sw.js` : c'est ce qui déclenche la mise à jour sur les tablettes déjà installées.
 
 | Fichier | Rôle |
 |---|---|

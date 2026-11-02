@@ -4,12 +4,12 @@ import { db, requestPersistence, storageEstimate } from './db.js';
 import { Engine, gainToDb, dbToGain } from './audio.js';
 import { Show } from './show.js';
 import { h, modal, modalOpen, closeTopModal, confirmBox, promptBox, toast, pickFiles, fmtTime, fmtClock, parseNum, numStr } from './dom.js';
-import { uid, newProject, newPad, newCue, normalizeProject, fileIdsOf, clone, FOLLOW } from './model.js';
+import { uid, newProject, newPad, newCue, normalizeProject, fileIdsOf, clone, isPlayable, FOLLOW, TRANSITIONS } from './model.js';
 import { openEditor } from './editor.js';
 import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, setupAudioSession, isStandalone, isIOS } from './device.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -159,6 +159,7 @@ function render() {
   $('btn-menu').disabled = state.locked;
   $('btn-lock').textContent = state.locked ? '🔒' : '🔓';
   $('btn-lock').classList.toggle('on', state.locked);
+  renderTransition();
   renderCues();
   renderTabs();
   renderGrid();
@@ -191,7 +192,25 @@ function renderCues() {
         : 'La conduite est vide. Passez en mode Édition pour ajouter des cues.'));
   }
   let standbyRow = null;
+  let num = 0;
+  const reorder = i => state.mode === 'edit' ? h('div', { class: 'reorder' },
+    h('button', { class: 'btn small', text: '▲', onclick: e => { e.stopPropagation(); moveCue(i, -1); } }),
+    h('button', { class: 'btn small', text: '▼', onclick: e => { e.stopPropagation(); moveCue(i, 1); } })
+  ) : null;
   cues.forEach((c, i) => {
+    if (c.kind === 'text') {
+      list.appendChild(h('div', {
+        class: 'cue text' + (i < show.standby && cues.slice(i + 1, show.standby).every(x => x.kind === 'text') ? ' cue-ahead' : ''),
+        'data-cue': c.id,
+        style: { '--c': c.color },
+        onclick: () => onCueClick(c, i)
+      },
+        h('div', { class: 'cue-text', text: c.note || '(texte vide)' }),
+        reorder(i)
+      ));
+      return;
+    }
+    num++;
     const playing = engine.voicesFor(c.id).length > 0;
     const row = h('div', {
       class: 'cue' + (i === show.standby ? ' standby' : '') + (show.played.has(c.id) ? ' played' : '') + (playing ? ' playing' : '') + (c.kind !== 'sound' ? ' action' : ''),
@@ -199,7 +218,7 @@ function renderCues() {
       style: { '--c': c.color },
       onclick: () => onCueClick(c, i)
     },
-      h('span', { class: 'cue-num', text: String(i + 1) }),
+      h('span', { class: 'cue-num', text: String(num) }),
       h('div', { class: 'cue-main' },
         h('div', { class: 'cue-name' }, c.name, badges(c)),
         c.note ? h('div', { class: 'cue-note', text: c.note }) : null,
@@ -207,10 +226,7 @@ function renderCues() {
       ),
       h('span', { class: 'cue-time time', text: c.kind === 'sound' ? fmtTime(regionLength(c)) : '' }),
       h('span', { class: 'cue-state' }),
-      state.mode === 'edit' ? h('div', { class: 'reorder' },
-        h('button', { class: 'btn small', text: '▲', onclick: e => { e.stopPropagation(); moveCue(i, -1); } }),
-        h('button', { class: 'btn small', text: '▼', onclick: e => { e.stopPropagation(); moveCue(i, 1); } })
-      ) : null
+      reorder(i)
     );
     if (i === show.standby) standbyRow = row;
     list.appendChild(row);
@@ -224,7 +240,8 @@ function renderCues() {
     if (r.top < lr.top || r.bottom > lr.bottom) standbyRow.scrollIntoView({ block: 'center' });
   }
   const next = cues[show.standby];
-  $('go-next').textContent = next ? (show.standby + 1) + '. ' + next.name : (cues.length ? 'Fin de la conduite' : '');
+  const nextNum = cues.slice(0, show.standby + 1).filter(isPlayable).length;
+  $('go-next').textContent = next ? nextNum + '. ' + next.name : (cues.length ? 'Fin de la conduite' : '');
   $('btn-go').disabled = !next;
   $('cue-edit-tools').style.display = state.mode === 'edit' ? '' : 'none';
 }
@@ -407,12 +424,25 @@ function editorApi(type) {
   return {
     engine,
     tabs: state.project.tabs,
+    cues: type === 'cue' ? state.project.cues : null,
     importFile,
     onSave: item => {
       const arr = list();
       const i = arr.findIndex(x => x.id === item.id);
       if (type === 'pad' && item.slot < 0) item.slot = freeSlot(item.tabId);
-      if (i >= 0) arr[i] = item;
+      if (type === 'cue') {
+        // La cue en attente doit rester la même après un déplacement.
+        const standbyId = arr[show.standby] ? arr[show.standby].id : null;
+        const before = item.before;
+        delete item.before;
+        if (i >= 0) arr.splice(i, 1);
+        const j = before ? arr.findIndex(x => x.id === before) : -1;
+        arr.splice(j >= 0 ? j : arr.length, 0, item);
+        const s = standbyId ? arr.findIndex(x => x.id === standbyId) : -1;
+        show.standby = s >= 0 ? s : show._playableFrom(Math.min(show.standby, arr.length));
+      } else if (i >= 0) {
+        arr[i] = item;
+      }
       if (item.fileId) engine.pinned.add(item.fileId);
       save();
       render();
@@ -430,7 +460,8 @@ function editorApi(type) {
     onDuplicate: item => {
       const copy = clone(item);
       copy.id = uid();
-      copy.name = item.name + ' (copie)';
+      delete copy.before;
+      if (copy.kind !== 'text') copy.name = item.name + ' (copie)';
       const arr = list();
       if (type === 'pad') {
         copy.slot = freeSlot(copy.tabId);
@@ -459,6 +490,10 @@ function addCuesFromFiles() {
       state.project.cues.push(cue);
     });
   });
+}
+
+function addTextCue() {
+  openEditor(editorApi('cue'), newCue('text'), 'cue');
 }
 
 function addActionCue() {
@@ -604,6 +639,55 @@ function toggleLock() {
     state.locked = false;
     render();
   });
+}
+
+// ---- Mode de transition ----
+
+const TRANSITION_ICONS = { mix: '⧉', crossfade: '⤨', cut: '✂' };
+
+function renderTransition() {
+  const s = state.project.settings;
+  const btn = $('btn-transition');
+  btn.innerHTML = '';
+  btn.appendChild(h('span', { class: 'tr-icon', text: TRANSITION_ICONS[s.transition] }));
+  btn.appendChild(h('span', { class: 'lbl', text: TRANSITIONS[s.transition] + (s.transition === 'crossfade' ? ' ' + numStr(s.crossfade) + ' s' : '') }));
+  btn.className = 'btn transition tr-' + s.transition;
+  btn.title = 'Mode de transition : ' + TRANSITIONS[s.transition];
+}
+
+function openTransition() {
+  const s = state.project.settings;
+  const help = {
+    mix: 'Les sons se superposent : un nouveau son ne touche pas à ceux qui jouent.',
+    crossfade: 'Le nouveau son monte pendant que les autres descendent puis s’arrêtent.',
+    cut: 'Les autres sons sont coupés net quand un nouveau son démarre.'
+  };
+  const dur = h('input', { class: 'input num', type: 'text', inputmode: 'decimal', value: numStr(s.crossfade) });
+  const choices = h('div', { class: 'choices' });
+  let m = null;
+  Object.keys(TRANSITIONS).forEach(k => {
+    choices.appendChild(h('button', {
+      class: 'choice' + (s.transition === k ? ' on' : ''),
+      onclick: () => {
+        s.transition = k;
+        s.crossfade = Math.max(0.1, parseNum(dur.value, s.crossfade));
+        save();
+        render();
+        m.close();
+      }
+    },
+      h('span', { class: 'choice-icon', text: TRANSITION_ICONS[k] }),
+      h('span', { class: 'choice-text' }, h('strong', { text: TRANSITIONS[k] }), h('span', { text: help[k] }))
+    ));
+  });
+  m = modal('Mode de transition', h('div', { class: 'editor' },
+    choices,
+    h('label', { class: 'field' }, h('span', { text: 'Durée du fondu enchaîné' }), h('div', { class: 'ctrl' }, dur, h('span', { text: 's' }))),
+    h('p', { class: 'muted small', text: 'S’applique aux pads et aux cues lancées par GO. Les cues « avec la précédente » jouent toujours ensemble, et le réglage « arrêter les autres sons » d’une cue reste prioritaire.' })
+  ), [], { onClose: () => {
+    const v = Math.max(0.1, parseNum(dur.value, s.crossfade));
+    if (v !== s.crossfade) { s.crossfade = v; save(); render(); }
+  } });
 }
 
 function setView(v) {
@@ -768,12 +852,15 @@ function openHelp() {
     h('ul', {},
       li('Les pads (à droite) se déclenchent d’un simple toucher. Un second toucher arrête, met en pause ou relance le son selon son réglage.'),
       li('La conduite (à gauche) se déroule avec le bouton GO. Touchez une ligne pour la placer en attente.'),
+      li('Les lignes de texte de la conduite (répliques, mouvements) servent de repères : GO les saute, et le texte qui précède la cue en attente est surligné.'),
+      li('Le bouton de transition (barre du haut) choisit ce qui arrive aux sons en cours quand un nouveau démarre : superposer, fondu enchaîné ou couper.'),
       li('Le bandeau « En cours » montre tous les sons qui jouent, avec leur temps restant.'),
       li('FONDU baisse tous les sons en douceur ; STOP coupe tout immédiatement et annule les enchaînements.')
     ),
     h('h3', { text: 'Préparer un projet' }),
     h('ul', {},
       li('Passez en mode « Édition », puis touchez une case vide ou « + Sons » pour importer vos fichiers.'),
+      li('« + Texte » ajoute une réplique ou un repère dans la conduite ; choisissez sa place avec « Position dans la conduite ».'),
       li('En mode Édition, touchez un pad ou une cue pour régler volume, début/fin, fondus, boucle, ducking et enchaînements.'),
       li('Exportez régulièrement vos projets depuis le menu : le fichier .jinglee contient tous les sons.')
     ),
@@ -829,6 +916,8 @@ function bindStatic() {
   $('btn-reset').addEventListener('click', resetCues);
   $('btn-add-cues').addEventListener('click', addCuesFromFiles);
   $('btn-add-action').addEventListener('click', addActionCue);
+  $('btn-add-text').addEventListener('click', addTextCue);
+  $('btn-transition').addEventListener('click', openTransition);
   $('timer').addEventListener('click', toggleTimer);
   $('timer').addEventListener('dblclick', resetTimer);
   document.querySelectorAll('#view-seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
@@ -853,7 +942,8 @@ function bindStatic() {
 
 async function boot() {
   bindStatic();
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  // Pas de cache hors-ligne en développement local : on veut toujours la dernière version des fichiers.
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   requestPersistence();

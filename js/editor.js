@@ -8,7 +8,8 @@ import { dbToGain, gainToDb } from './audio.js';
 export function openEditor(app, original, type) {
   const item = clone(original);
   const isCue = type === 'cue';
-  const isAction = isCue && item.kind !== 'sound';
+  const isText = isCue && item.kind === 'text';
+  const isAction = isCue && item.kind !== 'sound' && !isText;
   let preview = null;
   let rafId = 0;
 
@@ -110,8 +111,32 @@ export function openEditor(app, original, type) {
   };
 
   const retriggerSelect = select(RETRIGGER, item.retrigger);
-  const noteInput = h('textarea', { class: 'input', rows: 2, placeholder: 'Ex. : au noir, sur la réplique « … »' });
+  const noteInput = h('textarea', {
+    class: 'input',
+    rows: isText ? 5 : 2,
+    placeholder: isText ? 'Ex. : JEANNE — « …et je ne reviendrai jamais ! » (elle sort côté jardin)' : 'Ex. : au noir, sur la réplique « … »'
+  });
   noteInput.value = item.note || '';
+
+  // Position dans la conduite : « avant telle cue » ou « à la fin ».
+  let positionSelect = null;
+  if (isCue && app.cues) {
+    const cues = app.cues;
+    const idx = cues.findIndex(c => c.id === item.id);
+    const opts = {};
+    let num = 0;
+    cues.forEach(c => {
+      if (c.kind !== 'text') num++;
+      if (c.id === item.id) return;
+      const label = c.kind === 'text'
+        ? '« ' + (c.note || '').slice(0, 40) + ((c.note || '').length > 40 ? '…' : '') + ' »'
+        : num + '. ' + c.name;
+      opts[c.id] = 'Avant ' + label;
+    });
+    opts[''] = 'À la fin';
+    const next = idx >= 0 ? cues[idx + 1] : null;
+    positionSelect = select(opts, item.before != null ? item.before : (next ? next.id : ''));
+  }
   const followSelect = select(FOLLOW, item.follow);
   const delayInput = num(item.delay);
   const stopOthersInput = h('input', { type: 'checkbox', checked: item.stopOthers >= 0 });
@@ -124,6 +149,11 @@ export function openEditor(app, original, type) {
   }
 
   function readFields() {
+    if (positionSelect) item.before = positionSelect.value;
+    if (isText) {
+      item.note = noteInput.value.trim();
+      return;
+    }
     item.name = nameInput.value.trim() || item.fileName || 'Son';
     item.volume = dbToGain(parseFloat(volInput.value) <= -40 ? -60 : parseFloat(volInput.value));
     item.inPoint = Math.max(0, parseNum(inInput.value, 0));
@@ -151,10 +181,17 @@ export function openEditor(app, original, type) {
 
   const body = h('div', { class: 'editor' });
   if (isCue) body.appendChild(h('div', { class: 'kind-label', text: 'Type : ' + CUE_KINDS[item.kind] }));
-  body.appendChild(field('Nom', nameInput));
-  body.appendChild(field('Couleur', swatches));
+  if (isText) {
+    body.appendChild(field('Texte : réplique, mouvement ou repère qui annonce la suite', noteInput));
+    body.appendChild(field('Couleur', swatches));
+  } else {
+    body.appendChild(field('Nom', nameInput));
+    body.appendChild(field('Couleur', swatches));
+  }
 
-  if (!isAction) {
+  if (isText) {
+    // Rien d'autre : une ligne de texte ne se joue pas.
+  } else if (!isAction) {
     body.appendChild(h('div', { class: 'section' },
       h('div', { class: 'file-row' }, fileLabel),
       h('div', { class: 'row' }, replaceBtn, previewBtn, posLabel)
@@ -174,7 +211,7 @@ export function openEditor(app, original, type) {
     body.appendChild(field('Durée du fondu (s)', fadeOutInput));
   }
 
-  if (isCue) {
+  if (isCue && !isText) {
     body.appendChild(field('Note de régie', noteInput));
     body.appendChild(h('div', { class: 'grid2' },
       field('Départ', followSelect),
@@ -187,6 +224,7 @@ export function openEditor(app, original, type) {
       ));
     }
   }
+  if (positionSelect) body.appendChild(field('Position dans la conduite', positionSelect));
 
   const buttons = [];
   buttons.push({ label: 'Supprimer', class: 'danger left', action: () => { stopPreview(); app.onDelete(original); } });
@@ -194,5 +232,5 @@ export function openEditor(app, original, type) {
   if (!isCue) buttons.push({ label: 'Déplacer', action: () => { stopPreview(); readFields(); app.onSave(item); app.onMove(item); } });
   buttons.push({ label: 'Enregistrer', class: 'primary', action: () => { stopPreview(); readFields(); app.onSave(item); } });
 
-  modal(isCue ? 'Cue' : 'Pad', body, buttons, { wide: true, onClose: stopPreview });
+  modal(isText ? 'Texte' : isCue ? 'Cue' : 'Pad', body, buttons, { wide: true, onClose: stopPreview });
 }

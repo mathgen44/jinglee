@@ -30,8 +30,21 @@ export const FOLLOW = {
 export const CUE_KINDS = {
   sound: 'Son',
   fadeall: 'Fondu de tous les sons',
-  stopall: 'Arrêt de tous les sons'
+  stopall: 'Arrêt de tous les sons',
+  text: 'Texte (repère de jeu)'
 };
+
+// Ce qui arrive aux sons en cours quand on en lance un nouveau.
+export const TRANSITIONS = {
+  mix: 'Superposer',
+  crossfade: 'Fondu enchaîné',
+  cut: 'Couper'
+};
+
+// Les lignes de texte de la conduite ne se jouent pas : GO les saute.
+export function isPlayable(cue) {
+  return cue.kind !== 'text';
+}
 
 export function defaultSound(fileId, name, duration) {
   return {
@@ -66,6 +79,7 @@ export function newCue(kind, fileId, name, duration) {
   });
   if (kind === 'fadeall') { cue.name = 'Fondu général'; cue.color = COLORS[1]; cue.fadeOut = 3; }
   if (kind === 'stopall') { cue.name = 'Arrêt général'; cue.color = COLORS[0]; }
+  if (kind === 'text') { cue.name = ''; cue.color = COLORS[2]; }
   return cue;
 }
 
@@ -84,7 +98,9 @@ export function newProject(name) {
       rows: 4,
       fadeAll: 3,      // durée du bouton « Fondu » (s)
       duckLevel: 0.3,  // niveau des autres sons pendant un ducking
-      duckTime: 0.5    // durée de la baisse/remontée (s)
+      duckTime: 0.5,   // durée de la baisse/remontée (s)
+      transition: 'mix',
+      crossfade: 2     // durée du fondu enchaîné (s)
     }
   };
 }

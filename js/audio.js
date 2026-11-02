@@ -17,14 +17,35 @@ function decode(ctx, ab) {
   });
 }
 
-// Fige un paramètre à sa valeur courante avant une nouvelle rampe.
-function hold(param, t) {
-  if (param.cancelAndHoldAtTime) {
-    param.cancelAndHoldAtTime(t);
-  } else {
-    const v = param.value;
-    param.cancelScheduledValues(t);
-    param.setValueAtTime(v, t);
+// Rampe linéaire dont on connaît toujours la valeur courante.
+// On ne se fie ni à AudioParam.value ni à cancelAndHoldAtTime : selon les navigateurs,
+// ils renvoient une valeur fausse et le fondu démarre par une chute brutale du volume.
+class Ramp {
+  constructor(ctx, param, value) {
+    this.ctx = ctx;
+    this.param = param;
+    this.v0 = this.v1 = value;
+    this.t0 = this.t1 = 0;
+    param.setValueAtTime(value, ctx.currentTime);
+  }
+
+  valueAt(t) {
+    if (t >= this.t1) return this.v1;
+    if (t <= this.t0) return this.v0;
+    return this.v0 + (this.v1 - this.v0) * (t - this.t0) / (this.t1 - this.t0);
+  }
+
+  to(target, d) {
+    const now = this.ctx.currentTime;
+    const cur = this.valueAt(now);
+    this.param.cancelScheduledValues(0);
+    this.param.setValueAtTime(cur, now);
+    if (d > 0) this.param.linearRampToValueAtTime(target, now + d);
+    else this.param.setValueAtTime(target, now);
+    this.v0 = cur;
+    this.v1 = target;
+    this.t0 = now;
+    this.t1 = now + Math.max(0, d);
   }
 }
 
@@ -45,10 +66,15 @@ class Voice {
     this.length = this.outP - this.inP;
     this.loop = !!sound.loop;
     this.level = sound.volume == null ? 1 : sound.volume;
+    // source -> env (fondus programmés du son) -> fader (pause, arrêts, fondus manuels) -> duck -> master
     this.env = this.ctx.createGain();
+    this.fader = this.ctx.createGain();
     this.duck = this.ctx.createGain();
+    this.faderRamp = new Ramp(this.ctx, this.fader.gain, 1);
+    this.duckRamp = new Ramp(this.ctx, this.duck.gain, 1);
     this.duckTarget = 1;
-    this.env.connect(this.duck);
+    this.env.connect(this.fader);
+    this.fader.connect(this.duck);
     this.duck.connect(engine.master);
     this.state = 'idle';
     this.src = null;
@@ -67,6 +93,8 @@ class Voice {
     src.connect(this.env);
     const g = this.env.gain;
     g.cancelScheduledValues(0);
+    // Plan de l'enveloppe, gardé pour pouvoir la figer exactement (voir _freezeEnv).
+    const plan = { start: now, fadeIn: fadeIn || 0, foStart: 0, foEnd: 0 };
     if (fadeIn > 0) {
       g.setValueAtTime(0, now);
       g.linearRampToValueAtTime(this.level, now + fadeIn);
@@ -83,10 +111,13 @@ class Voice {
       src.start(now, this.inP + offset, rest);
       const fo = Math.min(this.sound.fadeOut || 0, rest);
       if (fo > 0) {
-        g.setValueAtTime(this.level, Math.max(now + (fadeIn || 0), now + rest - fo));
-        g.linearRampToValueAtTime(0, now + rest);
+        plan.foStart = Math.max(now + plan.fadeIn, now + rest - fo);
+        plan.foEnd = now + rest;
+        g.setValueAtTime(this.level, plan.foStart);
+        g.linearRampToValueAtTime(0, plan.foEnd);
       }
     }
+    this.envPlan = plan;
     src.onended = () => { if (this.src === src) this._ended(); };
     this.src = src;
     this.startAt = now;
@@ -94,14 +125,33 @@ class Voice {
     this.state = 'playing';
   }
 
+  _envAt(t) {
+    const p = this.envPlan;
+    if (!p) return this.level;
+    let v = this.level;
+    if (p.fadeIn > 0 && t < p.start + p.fadeIn) v = this.level * Math.max(0, t - p.start) / p.fadeIn;
+    if (p.foEnd > 0 && t > p.foStart) {
+      v = Math.min(v, this.level * Math.max(0, (p.foEnd - t) / (p.foEnd - p.foStart)));
+    }
+    return v;
+  }
+
+  // Arrête les fondus programmés à leur valeur actuelle : un arrêt ne doit jamais faire remonter le son.
+  _freezeEnv() {
+    const now = this.ctx.currentTime;
+    const v = this._envAt(now);
+    this.env.gain.cancelScheduledValues(0);
+    this.env.gain.setValueAtTime(v, now);
+    this.envPlan = { start: now, fadeIn: 0, foStart: 0, foEnd: 0 };
+    this.level = v;
+  }
+
   _killSource(fade) {
     const src = this.src;
     if (!src) return;
     this.src = null;
-    const now = this.ctx.currentTime;
-    hold(this.env.gain, now);
-    this.env.gain.linearRampToValueAtTime(0, now + fade);
-    try { src.stop(now + fade + 0.02); } catch (e) { /* déjà arrêtée */ }
+    this.faderRamp.to(0, fade);
+    try { src.stop(this.ctx.currentTime + fade + 0.02); } catch (e) { /* déjà arrêtée */ }
   }
 
   position() {
@@ -130,6 +180,7 @@ class Voice {
 
   resume() {
     if (this.state !== 'paused') return;
+    this.faderRamp.to(1, 0);
     this._startSource(this.pausedAt, 0.03);
     this.engine._changed();
   }
@@ -141,8 +192,8 @@ class Voice {
     // Un nouvel arrêt ne peut que raccourcir un fondu en cours.
     if (this.state === 'stopping' && this.stopEnd && this.ctx.currentTime + d >= this.stopEnd) return;
     const now = this.ctx.currentTime;
-    hold(this.env.gain, now);
-    this.env.gain.linearRampToValueAtTime(0, now + d);
+    this._freezeEnv();
+    this.faderRamp.to(0, d);
     if (this.src) { try { this.src.stop(now + d + 0.02); } catch (e) { /* déjà arrêtée */ } }
     this.state = 'stopping';
     this.stopEnd = now + d;
@@ -154,9 +205,7 @@ class Voice {
   setDuck(target, time) {
     if (target === this.duckTarget) return;
     this.duckTarget = target;
-    const now = this.ctx.currentTime;
-    hold(this.duck.gain, now);
-    this.duck.gain.linearRampToValueAtTime(target, now + time);
+    this.duckRamp.to(target, time);
   }
 
   _ended() {
@@ -165,7 +214,7 @@ class Voice {
     this.state = 'ended';
     clearTimeout(this.stopTimer);
     if (this.src) { try { this.src.stop(); } catch (e) { /* déjà arrêtée */ } this.src = null; }
-    try { this.env.disconnect(); this.duck.disconnect(); } catch (e) { /* déjà déconnecté */ }
+    try { this.env.disconnect(); this.fader.disconnect(); this.duck.disconnect(); } catch (e) { /* déjà déconnecté */ }
     this.engine._ended(this, natural);
   }
 }
@@ -260,9 +309,13 @@ export class Engine {
     }
   }
 
-  play(sound, meta) {
+  // prepare() est appelé une fois le son chargé, juste avant son départ
+  // (pour arrêter les autres sons sans créer de blanc pendant le chargement) ;
+  // il peut renvoyer une variante des réglages du son (ex. fondu d'entrée).
+  play(sound, meta, prepare) {
     this.unlock();
     return this.load(sound.fileId).then(buffer => {
+      if (prepare) sound = prepare() || sound;
       const v = new Voice(this, sound, buffer, meta);
       this.voices.push(v);
       v.play(0);
