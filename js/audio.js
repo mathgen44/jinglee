@@ -1,0 +1,302 @@
+// Moteur audio basé sur la Web Audio API.
+// Chaque lecture est une « voix » : source -> enveloppe (fondus) -> ducking -> master.
+// Les fichiers sont décodés en mémoire pour un départ instantané, avec un cache limité.
+
+const AC = window.AudioContext || window.webkitAudioContext;
+
+export function dbToGain(db) { return db <= -60 ? 0 : Math.pow(10, db / 20); }
+export function gainToDb(g) { return g <= 0.001 ? -60 : 20 * Math.log10(g); }
+
+function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+
+function decode(ctx, ab) {
+  return new Promise((resolve, reject) => {
+    // Forme à callbacks : seule disponible sur les anciens Safari.
+    const p = ctx.decodeAudioData(ab, resolve, e => reject(e || new Error('Format audio non pris en charge')));
+    if (p && p.catch) p.catch(reject);
+  });
+}
+
+// Fige un paramètre à sa valeur courante avant une nouvelle rampe.
+function hold(param, t) {
+  if (param.cancelAndHoldAtTime) {
+    param.cancelAndHoldAtTime(t);
+  } else {
+    const v = param.value;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(v, t);
+  }
+}
+
+let nextVoiceId = 1;
+
+class Voice {
+  constructor(engine, sound, buffer, meta) {
+    this.engine = engine;
+    this.ctx = engine.ctx;
+    this.id = nextVoiceId++;
+    this.sound = sound;
+    this.buffer = buffer;
+    this.meta = meta || {};
+    const dur = buffer.duration;
+    this.inP = clamp(sound.inPoint || 0, 0, dur);
+    this.outP = sound.outPoint > 0 ? clamp(sound.outPoint, this.inP, dur) : dur;
+    if (this.outP - this.inP < 0.02) { this.inP = 0; this.outP = dur; }
+    this.length = this.outP - this.inP;
+    this.loop = !!sound.loop;
+    this.level = sound.volume == null ? 1 : sound.volume;
+    this.env = this.ctx.createGain();
+    this.duck = this.ctx.createGain();
+    this.duckTarget = 1;
+    this.env.connect(this.duck);
+    this.duck.connect(engine.master);
+    this.state = 'idle';
+    this.src = null;
+    this.startAt = 0;
+    this.offset = 0;
+    this.pausedAt = 0;
+  }
+
+  get active() { return this.state === 'playing' || this.state === 'paused' || this.state === 'stopping'; }
+
+  _startSource(offset, fadeIn) {
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.buffer;
+    src.connect(this.env);
+    const g = this.env.gain;
+    g.cancelScheduledValues(0);
+    if (fadeIn > 0) {
+      g.setValueAtTime(0, now);
+      g.linearRampToValueAtTime(this.level, now + fadeIn);
+    } else {
+      g.setValueAtTime(this.level, now);
+    }
+    if (this.loop) {
+      src.loop = true;
+      src.loopStart = this.inP;
+      src.loopEnd = this.outP;
+      src.start(now, this.inP + offset);
+    } else {
+      const rest = Math.max(0.01, this.length - offset);
+      src.start(now, this.inP + offset, rest);
+      const fo = Math.min(this.sound.fadeOut || 0, rest);
+      if (fo > 0) {
+        g.setValueAtTime(this.level, Math.max(now + (fadeIn || 0), now + rest - fo));
+        g.linearRampToValueAtTime(0, now + rest);
+      }
+    }
+    src.onended = () => { if (this.src === src) this._ended(); };
+    this.src = src;
+    this.startAt = now;
+    this.offset = offset;
+    this.state = 'playing';
+  }
+
+  _killSource(fade) {
+    const src = this.src;
+    if (!src) return;
+    this.src = null;
+    const now = this.ctx.currentTime;
+    hold(this.env.gain, now);
+    this.env.gain.linearRampToValueAtTime(0, now + fade);
+    try { src.stop(now + fade + 0.02); } catch (e) { /* déjà arrêtée */ }
+  }
+
+  position() {
+    if (this.state === 'paused') return this.pausedAt;
+    if (this.state === 'idle') return 0;
+    let p = this.offset + Math.max(0, this.ctx.currentTime - this.startAt);
+    if (this.loop) p = p % this.length;
+    return Math.min(p, this.length);
+  }
+
+  progress() { return this.length > 0 ? this.position() / this.length : 0; }
+  remaining() { return Math.max(0, this.length - this.position()); }
+
+  play(offset) {
+    this._startSource(offset || 0, this.sound.fadeIn || 0);
+    this.engine._started(this);
+  }
+
+  pause() {
+    if (this.state !== 'playing') return;
+    this.pausedAt = this.position();
+    this._killSource(0.03);
+    this.state = 'paused';
+    this.engine._changed();
+  }
+
+  resume() {
+    if (this.state !== 'paused') return;
+    this._startSource(this.pausedAt, 0.03);
+    this.engine._changed();
+  }
+
+  stop(fade) {
+    if (!this.active) return;
+    if (this.state === 'paused') { this._ended(); return; }
+    const d = Math.max(0.03, fade || 0);
+    // Un nouvel arrêt ne peut que raccourcir un fondu en cours.
+    if (this.state === 'stopping' && this.stopEnd && this.ctx.currentTime + d >= this.stopEnd) return;
+    const now = this.ctx.currentTime;
+    hold(this.env.gain, now);
+    this.env.gain.linearRampToValueAtTime(0, now + d);
+    if (this.src) { try { this.src.stop(now + d + 0.02); } catch (e) { /* déjà arrêtée */ } }
+    this.state = 'stopping';
+    this.stopEnd = now + d;
+    clearTimeout(this.stopTimer);
+    this.stopTimer = setTimeout(() => this._ended(), (d + 0.1) * 1000);
+    this.engine._changed();
+  }
+
+  setDuck(target, time) {
+    if (target === this.duckTarget) return;
+    this.duckTarget = target;
+    const now = this.ctx.currentTime;
+    hold(this.duck.gain, now);
+    this.duck.gain.linearRampToValueAtTime(target, now + time);
+  }
+
+  _ended() {
+    if (this.state === 'ended') return;
+    const natural = this.state === 'playing';
+    this.state = 'ended';
+    clearTimeout(this.stopTimer);
+    if (this.src) { try { this.src.stop(); } catch (e) { /* déjà arrêtée */ } this.src = null; }
+    try { this.env.disconnect(); this.duck.disconnect(); } catch (e) { /* déjà déconnecté */ }
+    this.engine._ended(this, natural);
+  }
+}
+
+export class Engine {
+  // loader : fileId -> Promise<ArrayBuffer>
+  constructor(loader) {
+    this.loader = loader;
+    this.ctx = null;
+    this.master = null;
+    this.voices = [];
+    this.cache = new Map();   // fileId -> { buffer, bytes, used }
+    this.pending = new Map(); // fileId -> Promise<AudioBuffer>
+    this.pinned = new Set();
+    this.budget = 350e6;      // octets de PCM décodé gardés en mémoire
+    this.duckLevel = 0.3;
+    this.duckTime = 0.5;
+    this.listeners = {};
+    this.unlocked = false;
+  }
+
+  on(evt, fn) { (this.listeners[evt] = this.listeners[evt] || []).push(fn); }
+  emit(evt, a, b) { (this.listeners[evt] || []).forEach(fn => fn(a, b)); }
+
+  init() {
+    if (!this.ctx) {
+      try { this.ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { this.ctx = new AC(); }
+      this.master = this.ctx.createGain();
+      this.master.connect(this.ctx.destination);
+    }
+    return this.ctx;
+  }
+
+  // À appeler dans un geste utilisateur (iOS n'autorise le son qu'après un toucher).
+  unlock() {
+    const ctx = this.init();
+    if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) { /* ignoré */ } }
+    if (!this.unlocked) {
+      const s = ctx.createBufferSource();
+      s.buffer = ctx.createBuffer(1, 1, 22050);
+      s.connect(ctx.destination);
+      s.start(0);
+      this.unlocked = true;
+    }
+  }
+
+  load(fileId) {
+    if (!fileId) return Promise.reject(new Error('Aucun fichier associé'));
+    const c = this.cache.get(fileId);
+    if (c) { c.used = Date.now(); return Promise.resolve(c.buffer); }
+    if (this.pending.has(fileId)) return this.pending.get(fileId);
+    const ctx = this.init();
+    const p = this.loader(fileId)
+      .then(ab => {
+        if (!ab) throw new Error('Fichier audio introuvable');
+        return decode(ctx, ab);
+      })
+      .then(buffer => {
+        this.pending.delete(fileId);
+        this.cache.set(fileId, { buffer, bytes: buffer.length * buffer.numberOfChannels * 4, used: Date.now() });
+        this._evict();
+        return buffer;
+      }, err => {
+        this.pending.delete(fileId);
+        throw err;
+      });
+    this.pending.set(fileId, p);
+    return p;
+  }
+
+  // Décode à l'avance, un fichier à la fois pour limiter les pics de mémoire.
+  preload(fileIds) {
+    const ids = Array.from(fileIds).filter(id => id && !this.cache.has(id));
+    return ids.reduce((chain, id) => chain.then(() => this.load(id).catch(() => null)), Promise.resolve());
+  }
+
+  forget(fileId) { this.cache.delete(fileId); }
+  clearCache() { this.cache.clear(); }
+
+  _evict() {
+    let total = 0;
+    this.cache.forEach(c => { total += c.bytes; });
+    if (total <= this.budget) return;
+    const inUse = new Set(this.voices.map(v => v.sound.fileId));
+    const entries = Array.from(this.cache.entries())
+      .filter(([id]) => !inUse.has(id) && !this.pinned.has(id))
+      .sort((a, b) => a[1].used - b[1].used);
+    for (const [id, c] of entries) {
+      if (total <= this.budget) break;
+      this.cache.delete(id);
+      total -= c.bytes;
+    }
+  }
+
+  play(sound, meta) {
+    this.unlock();
+    return this.load(sound.fileId).then(buffer => {
+      const v = new Voice(this, sound, buffer, meta);
+      this.voices.push(v);
+      v.play(0);
+      return v;
+    });
+  }
+
+  voicesFor(refId) { return this.voices.filter(v => v.meta.refId === refId && v.active); }
+  activeVoices() { return this.voices.filter(v => v.active); }
+
+  fadeAll(d) { this.activeVoices().forEach(v => v.stop(d)); }
+  stopAll() { this.activeVoices().forEach(v => v.stop(0.03)); }
+
+  setMasterVolume(g) {
+    this.init();
+    this.master.gain.setValueAtTime(g, this.ctx.currentTime);
+  }
+
+  _updateDuck() {
+    const ducking = this.voices.some(v => v.state === 'playing' && v.sound.duck);
+    this.voices.forEach(v => {
+      if (v.state === 'ended') return;
+      v.setDuck(ducking && !v.sound.duck ? this.duckLevel : 1, this.duckTime);
+    });
+  }
+
+  _started(v) { this._updateDuck(); this.emit('change'); }
+  _changed() { this._updateDuck(); this.emit('change'); }
+
+  _ended(v, natural) {
+    const i = this.voices.indexOf(v);
+    if (i >= 0) this.voices.splice(i, 1);
+    this._updateDuck();
+    this.emit('end', v, natural);
+    this.emit('change');
+  }
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Jinglee</title>
+  <meta name="description" content="Lecteur de jingles et de conduites sonores pour le théâtre et le podcast, libre et gratuit.">
+  <meta name="theme-color" content="#111418">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Jinglee">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button id="btn-menu" class="btn icon" aria-label="Menu">☰</button>
+      <div class="title" id="project-name"></div>
+      <div class="clock" id="clock"></div>
+      <button id="timer" class="timer" title="Chronomètre : toucher pour démarrer/arrêter, double-toucher pour remettre à zéro">00:00:00</button>
+      <div class="spacer"></div>
+      <div class="seg" id="view-seg">
+        <button data-view="cues">Conduite</button>
+        <button data-view="mixed">Mixte</button>
+        <button data-view="pads">Pads</button>
+      </div>
+      <button id="btn-edit" class="btn">✎ <span class="lbl">Édition</span></button>
+      <button id="btn-lock" class="btn icon" aria-label="Verrouiller">🔓</button>
+      <button id="btn-fade" class="btn warn">Fondu</button>
+      <button id="btn-stop" class="btn danger">STOP</button>
+    </header>
+
+    <section id="nowplaying" class="nowplaying idle"></section>
+
+    <main id="workspace" class="workspace view-mixed">
+      <section class="panel cues">
+        <div class="panel-head">
+          <h2>Conduite</h2>
+          <div class="spacer"></div>
+          <div id="cue-edit-tools" class="row">
+            <button id="btn-add-cues" class="btn small">+ Sons</button>
+            <button id="btn-add-action" class="btn small">+ Action</button>
+          </div>
+          <button id="btn-reset" class="btn small" title="Revenir au début de la conduite">↺ Début</button>
+        </div>
+        <div id="cue-list" class="cue-list"></div>
+        <button id="btn-go" class="go">
+          <span class="go-label">GO</span>
+          <span id="go-next" class="go-next"></span>
+        </button>
+      </section>
+
+      <section class="panel pads">
+        <div id="tabs" class="tabs"></div>
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" class="toast"></div>
+  <noscript>Jinglee nécessite JavaScript.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
