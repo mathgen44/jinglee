@@ -49,6 +49,13 @@ Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le 
 > Sur iOS, l'application installée et Safari ont des données séparées : importez vos sons depuis l'application installée
 > (ou exportez votre projet depuis Safari et réimportez-le dans l'application).
 
+### Signaler un problème
+
+*Menu ☰ → Signaler un problème* prépare un rapport : votre description, la version de Jinglee, l'appareil,
+le navigateur et les dernières erreurs rencontrées (sans noms de projets ni de fichiers). Vous pouvez le relire avant
+de l'envoyer. **Envoyer sur GitHub** ouvre une [issue](https://github.com/mathgen44/jinglee/issues) déjà remplie
+(compte GitHub gratuit nécessaire) ; **Copier le rapport** permet de l'envoyer autrement.
+
 ### Mises à jour
 
 L'application vérifie s'il existe une nouvelle version à chaque retour au premier plan et affiche un bandeau

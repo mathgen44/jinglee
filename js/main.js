@@ -10,8 +10,9 @@ import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
 import { setupInstallPrompt } from './install.js';
 import { showProgress, closeProgress } from './progress.js';
+import { installErrorHandlers, buildReport, issueUrl, copyText, clearErrors, getErrors } from './report.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -760,7 +761,8 @@ async function openMenu() {
     h('div', { class: 'row wrap' },
       h('button', { class: 'btn', text: 'Renommer le projet', onclick: () => { m.close(); renameProject(); } }),
       h('button', { class: 'btn', text: 'Réglages', onclick: () => { m.close(); openSettings(); } }),
-      h('button', { class: 'btn', text: 'Aide', onclick: () => { m.close(); openHelp(); } })
+      h('button', { class: 'btn', text: 'Aide', onclick: () => { m.close(); openHelp(); } }),
+      h('button', { class: 'btn', text: '⚠ Signaler un problème', onclick: () => { m.close(); openReport(); } })
     ),
     h('h3', { text: 'Projets' }),
     list,
@@ -882,6 +884,46 @@ async function openSettings() {
       render();
     } }
   ], { wide: true });
+}
+
+// Rapport de problème : l'utilisateur voit tout ce qui sera envoyé (aucun nom de projet ni de fichier).
+async function openReport() {
+  const p = state.project;
+  const est = await storageEstimate();
+  const ctx = {
+    version: VERSION,
+    standalone: isStandalone(),
+    project: p.pads.length + ' pads, ' + p.cues.length + ' cues, ' + p.tabs.length + ' onglet(s)',
+    storage: est && est.usage != null ? Math.round(est.usage / 1e6) + ' Mo utilisés' + (est.quota ? ' sur ' + Math.round(est.quota / 1e6) + ' Mo' : '') : '',
+    keepAwake: keepAwakeStatus()
+  };
+  const title = h('input', { class: 'input', type: 'text', placeholder: 'Ex. : l’import depuis Google Drive ne fait rien' });
+  const desc = h('textarea', { class: 'input', rows: 4, placeholder: 'Que faisiez-vous ? Qu’attendiez-vous ? Que s’est-il passé à la place ?' });
+  const preview = h('textarea', { class: 'input report-preview', rows: 8, readonly: true });
+  const refresh = () => { preview.value = buildReport(desc.value, ctx); };
+  desc.addEventListener('input', refresh);
+  refresh();
+  const field = (label, el) => h('label', { class: 'field' }, h('span', { text: label }), el);
+  const errCount = getErrors().length;
+
+  modal('Signaler un problème', h('div', { class: 'editor' },
+    field('Titre', title),
+    field('Description', desc),
+    field('Rapport (relisez-le : c’est exactement ce qui sera envoyé)', preview),
+    h('p', { class: 'muted small', text: '« Envoyer sur GitHub » ouvre une page déjà remplie : il suffit de la valider (compte GitHub gratuit nécessaire). Sans compte, copiez le rapport et envoyez-le par mail ou message à la personne qui maintient Jinglee.' })
+  ), [
+    errCount ? { label: 'Effacer le journal (' + errCount + ')', class: 'left', action: () => { clearErrors(); refresh(); toast('Journal des erreurs effacé'); return false; } } : null,
+    { label: 'Copier le rapport', action: () => {
+      copyText('# ' + (title.value.trim() || 'Problème signalé') + '\n\n' + preview.value).then(
+        () => toast('Rapport copié'),
+        () => toast('Copie impossible : sélectionnez le texte du rapport à la main', 'error', true));
+      return false;
+    } },
+    { label: 'Envoyer sur GitHub', class: 'primary', action: () => {
+      refresh();
+      window.open(issueUrl(title.value.trim() || 'Problème signalé depuis Jinglee', preview.value), '_blank');
+    } }
+  ].filter(Boolean), { wide: true });
 }
 
 function openHelp() {
@@ -1017,6 +1059,7 @@ function detectFlexGap() {
 }
 
 async function boot() {
+  installErrorHandlers(msg => toast('Erreur inattendue : ' + msg + ' — vous pouvez la signaler depuis le menu ☰.', 'error', true));
   detectFlexGap();
   bindStatic();
   // Pas de cache hors-ligne en développement local : on veut toujours la dernière version des fichiers.

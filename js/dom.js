@@ -1,6 +1,7 @@
 // Petits utilitaires d'interface : création d'éléments, fenêtres modales, messages.
 
 import { showProgress, closeProgress } from './progress.js';
+import { logError } from './report.js';
 
 export function h(tag, attrs) {
   const el = document.createElement(tag);
@@ -160,7 +161,9 @@ export function promptBox(title, label, value, okLabel) {
 }
 
 let toastTimer = null;
-export function toast(msg, kind) {
+// Les messages d'erreur sont gardés dans le journal du rapport de problème (sauf noLog : déjà journalisé).
+export function toast(msg, kind, noLog) {
+  if (kind === 'error' && !noLog) logError(msg, 'message affiché');
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'toast show ' + (kind || '');
@@ -196,23 +199,31 @@ export function pickAudio(multiple) {
 // accept vide : aucun filtre.
 // waiting : affiche la fenêtre de progression pendant que le système fournit le fichier
 // (téléchargement depuis le cloud). Si des fichiers sont renvoyés, l'appelant doit la fermer (closeProgress).
+//
+// Le sélecteur peut se fermer (événement « cancel » sur les iPad récents) alors que le fichier
+// choisi est encore en cours de téléchargement depuis Google Drive : il arrive alors quelques
+// secondes plus tard. On ne considère donc jamais l'attente comme terminée tant qu'aucun fichier
+// n'est arrivé ; « cancel » et le bouton Annuler ferment seulement la fenêtre d'attente.
+// La promesse n'est résolue que si des fichiers arrivent.
+let pendingInput = null;
+
 export function pickFiles(accept, multiple, waiting) {
+  // Un nouveau choix remplace un éventuel choix précédent resté sans réponse.
+  if (pendingInput) pendingInput.remove();
   return new Promise(resolve => {
-    let done = false;
     const input = h('input', { type: 'file', accept: accept || null, style: { display: 'none' } });
+    pendingInput = input;
     if (multiple) input.multiple = true;
-    const finish = files => {
-      if (done) return;
-      done = true;
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) { if (waiting) closeProgress(); return; }
       input.remove();
-      if (waiting && !files.length) closeProgress();
+      if (pendingInput === input) pendingInput = null;
       resolve(files);
-    };
-    input.addEventListener('change', () => finish(Array.from(input.files || [])));
-    // « cancel » n'existe pas sur iOS 15 : le bouton Annuler de la fenêtre d'attente prend le relais.
-    input.addEventListener('cancel', () => finish([]));
+    });
+    input.addEventListener('cancel', () => { if (waiting) closeProgress(); });
     document.body.appendChild(input);
     input.click();
-    if (waiting) showProgress('Import', 'En attente du fichier…', CLOUD_WAIT, null, () => finish([]));
+    if (waiting) showProgress('Import', 'En attente du fichier…', CLOUD_WAIT, null, () => closeProgress());
   });
 }
