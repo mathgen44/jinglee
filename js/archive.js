@@ -3,6 +3,7 @@
 import { db } from './db.js';
 import { makeZip, readZip } from './zip.js';
 import { fileIdsOf, normalizeProject, uid, clone } from './model.js';
+import { readFile } from './dom.js';
 
 function extOf(name, type) {
   const m = /\.([a-z0-9]{1,5})$/i.exec(name || '');
@@ -54,7 +55,7 @@ export async function deliverFile(blob, filename) {
 }
 
 export async function importArchive(file, existingIds) {
-  const buf = await file.arrayBuffer();
+  const buf = await readFile(file);
   const entries = readZip(buf);
   const json = entries.get('project.json');
   if (!json) throw new Error('Ce fichier n’est pas un projet Jinglee');

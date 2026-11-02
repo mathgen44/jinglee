@@ -30,6 +30,39 @@ function append(el, c) {
   el.appendChild(c.nodeType ? c : document.createTextNode(String(c)));
 }
 
+// Lecture d'un fichier en mémoire. Blob.arrayBuffer() n'existe qu'à partir d'iOS 14 : repli sur FileReader.
+export function readFile(file) {
+  if (file.arrayBuffer) return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error('Lecture du fichier impossible'));
+    r.readAsArrayBuffer(file);
+  });
+}
+
+// Déclenchement dès l'appui (sans attendre le relâchement) : pads et GO.
+// Les événements « pointer » n'existent qu'à partir d'iOS 13 : repli sur touchstart / mousedown.
+// fn peut renvoyer false pour laisser passer l'appui (le clic qui suit reste alors possible).
+export function onPress(el, fn) {
+  if (window.PointerEvent) {
+    el.addEventListener('pointerdown', e => {
+      if (e.button) return;
+      if (fn(e) !== false) e.preventDefault();
+    });
+    return;
+  }
+  let lastTouch = 0;
+  el.addEventListener('touchstart', e => {
+    lastTouch = Date.now();
+    if (fn(e) !== false) e.preventDefault();
+  }, { passive: false });
+  el.addEventListener('mousedown', e => {
+    if (e.button || Date.now() - lastTouch < 800) return;
+    if (fn(e) !== false) e.preventDefault();
+  });
+}
+
 export function fmtTime(t, tenths) {
   if (!isFinite(t) || t < 0) t = 0;
   const m = Math.floor(t / 60);

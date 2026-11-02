@@ -1,7 +1,7 @@
 # Jinglee
 
 Lecteur de jingles et de conduites sonores pour le **théâtre** et le **podcast**.
-Libre, gratuit, sans compte, et conçu pour les tablettes, y compris les anciennes (iPad mini 4 sous iPadOS 15, vieux Android).
+Libre, gratuit, sans compte, et conçu pour les tablettes, y compris les anciennes (iPad mini 4 sous iPadOS 15, iPad sous iOS 12 ou 13, vieux Android).
 
 Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le navigateur, on l'ajoute à l'écran d'accueil, et elle fonctionne ensuite **hors-ligne**. Les sons restent sur la tablette.
 

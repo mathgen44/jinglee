@@ -639,6 +639,37 @@ textarea.input { resize: vertical; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: #4a1b1a; border-color: var(--danger); }
 
+/* ---------- Anciens Safari (iOS 13 et avant) : pas de « gap » en flexbox ---------- */
+
+.no-flexgap .topbar > * + *,
+.no-flexgap .row > * + *,
+.no-flexgap .tabs > * + *,
+.no-flexgap .panel-head > * + *,
+.no-flexgap .nowplaying > * + *,
+.no-flexgap .np > * + *,
+.no-flexgap .np-btns > * + *,
+.no-flexgap .modal-foot > * + *,
+.no-flexgap .ctrl > * + *,
+.no-flexgap .mode-row > * + *,
+.no-flexgap .icon-group > * + *,
+.no-flexgap .points > * + *,
+.no-flexgap .modal-title > * + *,
+.no-flexgap .project-row > * + *,
+.no-flexgap .install-banner > * + *,
+.no-flexgap .update-banner > * + *,
+.no-flexgap .choice > * + *,
+.no-flexgap .btn > * + * { margin-left: 6px; }
+.no-flexgap .swatches > * { margin: 0 6px 6px 0; }
+.no-flexgap .editor > * + *,
+.no-flexgap .ed-section > * + *,
+.no-flexgap .field > * + *,
+.no-flexgap .point > * + *,
+.no-flexgap .project-list > * + *,
+.no-flexgap .choices > * + *,
+.no-flexgap .progress-box > * + *,
+.no-flexgap .install-text > * + * { margin-top: 8px; }
+.no-flexgap .cue > * + * { margin-left: 10px; }
+
 /* ---------- Écrans étroits et portrait ---------- */
 
 @media (orientation: portrait) {

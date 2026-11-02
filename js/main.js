@@ -3,7 +3,7 @@
 import { db, requestPersistence, storageEstimate } from './db.js';
 import { Engine, gainToDb, dbToGain } from './audio.js';
 import { Show } from './show.js';
-import { h, modal, modalOpen, closeTopModal, confirmBox, promptBox, toast, pickFiles, pickAudio, anyFilePicker, setAnyFilePicker, fmtTime, fmtClock, parseNum, numStr } from './dom.js';
+import { h, modal, modalOpen, closeTopModal, confirmBox, promptBox, toast, pickFiles, pickAudio, readFile, onPress, anyFilePicker, setAnyFilePicker, fmtTime, fmtClock, parseNum, numStr } from './dom.js';
 import { uid, newProject, newPad, newCue, normalizeProject, fileIdsOf, clone, isPlayable, FOLLOW, TRANSITIONS } from './model.js';
 import { openEditor } from './editor.js';
 import { exportProject, importArchive, deliverFile } from './archive.js';
@@ -68,7 +68,7 @@ function sizeText(bytes) {
 async function importFile(file, step) {
   step = step || (() => {});
   step('Lecture du fichier (' + sizeText(file.size) + ')…', 0.05);
-  const data = await file.arrayBuffer();
+  const data = await readFile(file);
   const id = uid();
   step('Analyse du son et enregistrement sur l’appareil…', 0.25);
   const decoding = engine.decodeInto(id, data.slice(0));
@@ -361,10 +361,8 @@ function renderGrid() {
       h('div', { class: 'pad-name', text: pad.name }),
       h('div', { class: 'pad-info' }, h('span', { class: 'time', text: fmtTime(regionLength(pad)) }), badges(pad))
     );
-    el.addEventListener('pointerdown', e => {
-      if (state.mode !== 'show' || state.moving) return;
-      if (e.button && e.button !== 0) return;
-      e.preventDefault();
+    onPress(el, () => {
+      if (state.mode !== 'show' || state.moving) return false; // le clic qui suit ouvre l'éditeur ou dépose le pad
       show.triggerPad(pad);
     });
     el.addEventListener('click', () => {
@@ -953,7 +951,7 @@ function bindStatic() {
   $('btn-lock').addEventListener('click', toggleLock);
   $('btn-fade').addEventListener('click', () => show.fadeAll());
   $('btn-stop').addEventListener('click', () => show.stopAll());
-  $('btn-go').addEventListener('pointerdown', e => { e.preventDefault(); go(); });
+  onPress($('btn-go'), go);
   $('btn-reset').addEventListener('click', resetCues);
   $('btn-add-cues').addEventListener('click', addCuesFromFiles);
   $('btn-add-action').addEventListener('click', addActionCue);
@@ -1006,7 +1004,20 @@ function setupUpdates() {
   });
 }
 
+// « gap » en flexbox n'existe qu'à partir de Safari 14.1 : sinon on espace avec des marges (classe no-flexgap).
+function detectFlexGap() {
+  const d = document.createElement('div');
+  d.style.cssText = 'display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden';
+  d.appendChild(document.createElement('div'));
+  d.appendChild(document.createElement('div'));
+  document.body.appendChild(d);
+  const ok = d.scrollHeight === 1;
+  d.remove();
+  if (!ok) document.documentElement.classList.add('no-flexgap');
+}
+
 async function boot() {
+  detectFlexGap();
   bindStatic();
   // Pas de cache hors-ligne en développement local : on veut toujours la dernière version des fichiers.
   if ('serviceWorker' in navigator && location.protocol === 'https:') setupUpdates();

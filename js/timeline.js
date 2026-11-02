@@ -80,15 +80,39 @@ export class Timeline {
       h('div', { class: 'timeline-wrap' }, this.canvas, h('div', { class: 'timeline-msg', text: 'Chargement de la forme d’onde…' })),
       this.info
     );
-    this.canvas.addEventListener('pointerdown', e => this._down(e));
-    this.canvas.addEventListener('pointermove', e => this._move(e));
-    this.canvas.addEventListener('pointerup', e => this._up(e));
-    this.canvas.addEventListener('pointercancel', e => this._up(e));
+    if (window.PointerEvent) {
+      this.canvas.addEventListener('pointerdown', e => this._down(e));
+      this.canvas.addEventListener('pointermove', e => this._move(e));
+      this.canvas.addEventListener('pointerup', e => this._up(e));
+      this.canvas.addEventListener('pointercancel', e => this._up(e));
+    } else {
+      // iOS 12 et antérieurs : pas d'événements « pointer », on suit le premier doigt.
+      const touch = fn => e => {
+        const t = e.touches[0] || e.changedTouches[0];
+        e.preventDefault();
+        fn({ clientX: t.clientX, preventDefault() {} });
+      };
+      this.canvas.addEventListener('touchstart', touch(e => this._down(e)), { passive: false });
+      this.canvas.addEventListener('touchmove', touch(e => this._move(e)), { passive: false });
+      this.canvas.addEventListener('touchend', e => this._up(e));
+      this.canvas.addEventListener('touchcancel', e => this._up(e));
+      this.canvas.addEventListener('mousedown', e => this._down(e));
+      this._onMouseMove = e => this._move(e);
+      this._onMouseUp = e => this._up(e);
+      window.addEventListener('mousemove', this._onMouseMove);
+      window.addEventListener('mouseup', this._onMouseUp);
+    }
     this._onResize = () => this.draw();
     window.addEventListener('resize', this._onResize);
   }
 
-  destroy() { window.removeEventListener('resize', this._onResize); }
+  destroy() {
+    window.removeEventListener('resize', this._onResize);
+    if (this._onMouseMove) {
+      window.removeEventListener('mousemove', this._onMouseMove);
+      window.removeEventListener('mouseup', this._onMouseUp);
+    }
+  }
 
   setBuffer(fileId, buffer) {
     this.peaks = buffer ? peaksFor(fileId, buffer) : null;
