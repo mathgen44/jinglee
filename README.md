@@ -62,8 +62,11 @@ Le numéro de version est indiqué en bas du menu ☰.
 - Activez le mode avion ou « Ne pas déranger » pour éviter les notifications sonores.
 - **Verrouillez** l'application (cadenas) pendant la représentation : plus aucune modification possible par erreur.
 - **Exportez** votre projet après chaque modification importante : c'est votre sauvegarde.
-- Import depuis Google Drive ou un autre service : si vos MP3 apparaissent grisés dans le sélecteur,
-  cochez *Menu → Réglages → Montrer tous les fichiers à l'import*. Jinglee vérifie alors lui-même chaque fichier.
+- Import depuis Google Drive ou un autre service : l'appareil télécharge d'abord chaque fichier en entier
+  avant de le transmettre à Jinglee, ce qui peut être long (Jinglee affiche une fenêtre d'attente).
+  Pour aller plus vite, copiez d'abord vos sons dans *Fichiers → Sur mon iPad*, ou préparez le projet sur un ordinateur
+  et importez le fichier `.jinglee` sur la tablette.
+  Si vos MP3 apparaissent grisés dans le sélecteur, cochez *Menu → Réglages → Montrer tous les fichiers à l'import*.
 - Préférez des fichiers MP3/AAC/M4A pour les longues pistes. Tous les sons sont décodés en mémoire pour un
   départ instantané ; sur un iPad mini 4 (2 Go de RAM), Jinglee garde environ 350 Mo de sons décodés
   (≈ 30 minutes de stéréo) et recharge les autres à la demande.

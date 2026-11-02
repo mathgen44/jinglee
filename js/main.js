@@ -9,8 +9,9 @@ import { openEditor } from './editor.js';
 import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
 import { setupInstallPrompt } from './install.js';
+import { showProgress, closeProgress } from './progress.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -57,33 +58,64 @@ function flushSave() {
 
 function baseName(name) { return name.replace(/\.[^.]+$/, ''); }
 
-async function importFile(file) {
+function sizeText(bytes) {
+  return bytes >= 1e6 ? numStr(Math.round(bytes / 1e5) / 10) + ' Mo' : Math.max(1, Math.round(bytes / 1e3)) + ' ko';
+}
+
+// step(libellé, avancement 0..1) : informe la fenêtre de progression.
+// Le décodage (l'étape la plus longue) et l'écriture sur l'appareil se font en parallèle,
+// à partir des données déjà en mémoire.
+async function importFile(file, step) {
+  step = step || (() => {});
+  step('Lecture du fichier (' + sizeText(file.size) + ')…', 0.05);
   const data = await file.arrayBuffer();
   const id = uid();
-  await db.putFile({ id, name: file.name, type: file.type, data });
+  step('Analyse du son et enregistrement sur l’appareil…', 0.25);
+  const decoding = engine.decodeInto(id, data.slice(0));
+  const storing = db.putFile({ id, name: file.name, type: file.type, data });
+  let buffer;
   try {
-    const buffer = await engine.load(id);
-    return { fileId: id, name: baseName(file.name), duration: buffer.duration };
+    buffer = await decoding;
   } catch (e) {
     engine.forget(id);
-    await db.deleteFile(id);
+    await storing.catch(() => {});
+    await db.deleteFile(id).catch(() => {});
     throw new Error('« ' + file.name + ' » n’est pas un son lisible sur cet appareil (préférez MP3, M4A ou WAV)');
   }
+  step('Enregistrement sur l’appareil…', 0.9);
+  await storing;
+  step('Terminé', 1);
+  return { fileId: id, name: baseName(file.name), duration: buffer.duration };
 }
 
 async function importMany(files, create) {
   let ok = 0;
-  for (let i = 0; i < files.length; i++) {
-    if (files.length > 1) toast('Import ' + (i + 1) + ' / ' + files.length + '…');
+  const errors = [];
+  const n = files.length;
+  for (let i = 0; i < n; i++) {
+    const file = files[i];
+    const step = (label, frac) => showProgress(
+      n > 1 ? 'Import des sons (' + (i + 1) + ' / ' + n + ')' : 'Import du son',
+      file.name, label, (i + frac) / n);
     try {
-      const f = await importFile(files[i]);
-      create(f);
+      create(await importFile(file, step));
       ok++;
     } catch (e) {
-      toast(e.message, 'error');
+      errors.push(e.message);
     }
   }
+  closeProgress();
   if (ok) { save(); render(); toast(ok + (ok > 1 ? ' sons importés' : ' son importé')); }
+  if (errors.length) toast(errors.join(' — '), 'error');
+}
+
+// Import d'un seul fichier (remplacement dans l'éditeur), avec sa fenêtre de progression.
+function importOne(file) {
+  const step = (label, frac) => showProgress('Import du son', file.name, label, frac);
+  return importFile(file, step).then(
+    f => { closeProgress(); return f; },
+    e => { closeProgress(); throw e; }
+  );
 }
 
 // Supprime les fichiers audio qui ne sont plus utilisés par aucun projet.
@@ -426,7 +458,7 @@ function editorApi(type) {
     engine,
     tabs: state.project.tabs,
     cues: type === 'cue' ? state.project.cues : null,
-    importFile,
+    importFile: importOne,
     onSave: item => {
       const arr = list();
       const i = arr.findIndex(x => x.id === item.id);
@@ -763,15 +795,17 @@ async function doExport(p) {
 
 function doImport(m, projects) {
   // iOS ne connaît pas l'extension .jinglee et la grise : pas de filtre, le contenu est vérifié à l'import.
-  pickFiles(isIOS ? '' : '.jinglee,.zip,application/zip', false).then(async files => {
+  pickFiles(isIOS ? '' : '.jinglee,.zip,application/zip', false, true).then(async files => {
     if (!files.length) return;
     try {
-      toast('Import du projet…');
+      showProgress('Import du projet', files[0].name, 'Lecture et enregistrement des sons (' + sizeText(files[0].size) + ')…', null);
       const p = await importArchive(files[0], new Set(projects.map(x => x.id)));
+      closeProgress();
       m.close();
       await openProject(p);
       toast('Projet « ' + p.name + ' » importé');
     } catch (e) {
+      closeProgress();
       toast('Import impossible : ' + e.message, 'error');
     }
   });

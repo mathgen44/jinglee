@@ -285,6 +285,16 @@ export class Engine {
     return p;
   }
 
+  // Décode des données déjà en mémoire (import) et les met en cache, sans relire le stockage.
+  decodeInto(fileId, arrayBuffer) {
+    const ctx = this.init();
+    return decode(ctx, arrayBuffer).then(buffer => {
+      this.cache.set(fileId, { buffer, bytes: buffer.length * buffer.numberOfChannels * 4, used: Date.now() });
+      this._evict();
+      return buffer;
+    });
+  }
+
   // Décode à l'avance, un fichier à la fois pour limiter les pics de mémoire.
   preload(fileIds) {
     const ids = Array.from(fileIds).filter(id => id && !this.cache.has(id));

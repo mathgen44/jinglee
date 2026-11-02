@@ -1,5 +1,7 @@
 // Petits utilitaires d'interface : création d'éléments, fenêtres modales, messages.
 
+import { showProgress, closeProgress } from './progress.js';
+
 export function h(tag, attrs) {
   const el = document.createElement(tag);
   if (attrs) {
@@ -150,21 +152,34 @@ export function setAnyFilePicker(on) {
   try { localStorage.setItem('jinglee.anyFile', on ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
 }
 
+export const CLOUD_WAIT = 'Si le fichier est sur Google Drive ou un autre service en ligne, l’appareil doit d’abord ' +
+  'le télécharger en entier avant de le transmettre à Jinglee : cela peut prendre un moment selon sa taille et la connexion.';
+
 export function pickAudio(multiple) {
-  return pickFiles(anyFilePicker() ? '' : AUDIO_ACCEPT, multiple);
+  return pickFiles(anyFilePicker() ? '' : AUDIO_ACCEPT, multiple, true);
 }
 
 // Ouvre le sélecteur de fichiers du système (doit être appelé dans un geste utilisateur).
 // accept vide : aucun filtre.
-export function pickFiles(accept, multiple) {
+// waiting : affiche la fenêtre de progression pendant que le système fournit le fichier
+// (téléchargement depuis le cloud). Si des fichiers sont renvoyés, l'appelant doit la fermer (closeProgress).
+export function pickFiles(accept, multiple, waiting) {
   return new Promise(resolve => {
+    let done = false;
     const input = h('input', { type: 'file', accept: accept || null, style: { display: 'none' } });
     if (multiple) input.multiple = true;
-    input.addEventListener('change', () => {
-      resolve(Array.from(input.files || []));
+    const finish = files => {
+      if (done) return;
+      done = true;
       input.remove();
-    });
+      if (waiting && !files.length) closeProgress();
+      resolve(files);
+    };
+    input.addEventListener('change', () => finish(Array.from(input.files || [])));
+    // « cancel » n'existe pas sur iOS 15 : le bouton Annuler de la fenêtre d'attente prend le relais.
+    input.addEventListener('cancel', () => finish([]));
     document.body.appendChild(input);
     input.click();
+    if (waiting) showProgress('Import', 'En attente du fichier…', CLOUD_WAIT, null, () => finish([]));
   });
 }
