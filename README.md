@@ -27,7 +27,8 @@ Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le 
 Jinglee doit être servi en **HTTPS** pour fonctionner hors-ligne. Le plus simple est GitHub Pages :
 
 1. Publiez ce dossier dans un dépôt GitHub, puis activez *Settings → Pages* sur la branche principale.
-2. Sur l'iPad, ouvrez l'adresse dans **Safari**, touchez *Partager* → *Sur l'écran d'accueil*.
+2. Sur l'iPad, ouvrez l'adresse dans **Safari**, touchez *Partager* → *Sur l'écran d'accueil*
+   (un bandeau le rappelle tant que Jinglee n'est pas installé).
 3. Lancez Jinglee depuis l'icône (et non depuis Safari) : c'est cette version installée qui garde vos sons.
 4. Sur Android, ouvrez l'adresse dans Chrome et choisissez *Installer l'application*.
 

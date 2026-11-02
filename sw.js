@@ -17,6 +17,7 @@ const FILES = [
   'js/archive.js',
   'js/zip.js',
   'js/device.js',
+  'js/install.js',
   'js/media.js',
   'icons/icon-192.png',
   'icons/icon-512.png',

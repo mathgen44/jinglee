@@ -8,6 +8,7 @@ import { uid, newProject, newPad, newCue, normalizeProject, fileIdsOf, clone, is
 import { openEditor } from './editor.js';
 import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
+import { setupInstallPrompt } from './install.js';
 
 const VERSION = '1.1.1';
 
@@ -954,6 +955,7 @@ async function boot() {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   requestPersistence();
+  setupInstallPrompt();
   try {
     const projects = await db.listProjects();
     const lastId = pref('project', null);
