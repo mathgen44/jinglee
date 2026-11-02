@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <!-- Page utilisée par tools/screenshots.py pour produire les captures du README. -->
+  <base href="../">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jinglee — captures</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button id="btn-menu" class="btn icon" aria-label="Menu">☰</button>
+      <div class="title" id="project-name"></div>
+      <div class="clock" id="clock"></div>
+      <button id="timer" class="timer">00:00:00</button>
+      <div class="spacer"></div>
+      <button id="btn-transition" class="btn transition"></button>
+      <div class="seg" id="view-seg">
+        <button data-view="cues">Conduite</button>
+        <button data-view="mixed">Mixte</button>
+        <button data-view="pads">Pads</button>
+      </div>
+      <button id="btn-edit" class="btn">✎ <span class="lbl">Édition</span></button>
+      <button id="btn-lock" class="btn icon" aria-label="Verrouiller">🔓</button>
+      <button id="btn-fade" class="btn warn">Fondu</button>
+      <button id="btn-stop" class="btn danger">STOP</button>
+    </header>
+    <section id="nowplaying" class="nowplaying idle"></section>
+    <main id="workspace" class="workspace view-mixed">
+      <section class="panel cues">
+        <div class="panel-head">
+          <h2>Conduite</h2>
+          <div class="spacer"></div>
+          <div id="cue-edit-tools" class="row">
+            <button id="btn-add-cues" class="btn small">+ Sons</button>
+            <button id="btn-add-text" class="btn small">+ Texte</button>
+            <button id="btn-add-action" class="btn small">+ Action</button>
+          </div>
+          <button id="btn-reset" class="btn small">↺ Début</button>
+        </div>
+        <div id="cue-list" class="cue-list"></div>
+        <button id="btn-go" class="go"><span class="go-label">GO</span><span id="go-next" class="go-next"></span></button>
+      </section>
+      <section class="panel pads">
+        <div id="tabs" class="tabs"></div>
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" class="toast"></div>
+  <!-- Retarde l'événement load (voir tools/screenshots.py). -->
+  <img src="/__delay" alt="" style="display:none">
+  <script type="module">
+    import { db } from './js/db.js';
+    import * as M from './js/model.js';
+
+    const shot = new URLSearchParams(location.search).get('shot') || 'main';
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+
+    async function addFile(name) {
+      const ab = await fetch('test-audio/demo/' + name + '.mp3').then(r => r.arrayBuffer());
+      const id = M.uid();
+      await db.putFile({ id, name: name + '.mp3', type: 'audio/mpeg', data: ab.slice(0) });
+      const buf = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+      return { id, d: buf.duration, name };
+    }
+
+    const f = {};
+    for (const n of ['applause', 'bell', 'door', 'storm', 'phone', 'steps', 'clock', 'laugh', 'waltz', 'rain']) f[n] = await addFile(n);
+
+    const C = M.COLORS;
+    const P = M.newProject('Le Malade imaginaire');
+    P.settings.transition = 'crossfade';
+    const act1 = P.tabs[0];
+    act1.name = 'Acte I';
+    P.tabs.push({ id: M.uid(), name: 'Acte II' }, { id: M.uid(), name: 'Entracte' });
+
+    const pad = (name, file, color, extra, slot) => {
+      const p = M.newPad(act1.id, slot, file.id, name, file.d);
+      p.color = color;
+      p.fileName = file.name;
+      return Object.assign(p, extra || {});
+    };
+    [
+      ['Applaudissements', f.applause, C[3]], ['Sonnette', f.bell, C[2]], ['Porte qui grince', f.door, C[1]],
+      ['Orage', f.storm, C[6], { loop: true, fadeIn: 1.5, fadeOut: 3 }], ['Téléphone', f.phone, C[0]],
+      ['Pas dans l’escalier', f.steps, C[8]], ['Horloge', f.clock, C[4], { loop: true }], ['Rires', f.laugh, C[7]],
+      ['Valse du bal', f.waltz, C[5], { duck: true }], ['Pluie', f.rain, C[9], { loop: true }]
+    ].forEach((a, i) => P.pads.push(pad(a[0], a[1], a[2], a[3], i)));
+
+    const cue = (name, file, color, extra) => {
+      const q = M.newCue('sound', file.id, name, file.d);
+      q.color = color;
+      q.fileName = file.name;
+      return Object.assign(q, extra || {});
+    };
+    const text = s => Object.assign(M.newCue('text'), { note: s });
+    P.cues.push(
+      cue('Ouverture', f.waltz, C[5], { note: 'Salle dans le noir', fadeOut: 2 }),
+      text('ARGAN — « Trois et deux font cinq, et cinq font dix… »'),
+      cue('Sonnette', f.bell, C[2]),
+      cue('Pluie dehors', f.rain, C[4], { loop: true, follow: 'after', delay: 1 }),
+      text('TOINETTE entre côté cour, puis traverse vers la fenêtre'),
+      cue('Orage', f.storm, C[6], { note: 'Sur le geste de Toinette', stopOthers: 2 }),
+      Object.assign(M.newCue('fadeall'), { note: 'Fin de l’acte I' }),
+      cue('Musique d’entracte', f.waltz, C[5], { follow: 'after', delay: 2, loop: true })
+    );
+    await db.putProject(P);
+    localStorage.setItem('jinglee.project', P.id);
+    localStorage.setItem('jinglee.installHidden', '1');
+
+    await import('./js/main.js');
+    await wait(1500);
+    const down = el => el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+    const padEl = name => [...document.querySelectorAll('.pad[data-pad]')].find(p => p.innerText.includes(name));
+
+    if (shot === 'main') {
+      down(document.getElementById('btn-go'));
+      await wait(1200);
+      down(document.getElementById('btn-go'));
+      await wait(400);
+      down(padEl('Horloge'));
+      await wait(2600);
+    } else {
+      document.getElementById('btn-edit').click();
+      await wait(200);
+      padEl('Orage').click();
+      await wait(1500);
+    }
+    document.title = 'ready';
+  </script>
+</body>
+</html>
