@@ -1,7 +1,7 @@
 // Service worker : met l'application en cache pour un fonctionnement hors-ligne.
 // Les sons ne passent pas par ici : ils sont stockés dans IndexedDB.
 
-const CACHE = 'jinglee-v1.1.1';
+const CACHE = 'jinglee-v1.2.0';
 const FILES = [
   './',
   'index.html',
@@ -18,6 +18,7 @@ const FILES = [
   'js/zip.js',
   'js/device.js',
   'js/install.js',
+  'js/timeline.js',
   'js/media.js',
   'icons/icon-192.png',
   'icons/icon-512.png',

@@ -11,13 +11,13 @@ export const COLORS = [
   '#2e86de', '#8e44ad', '#e84393', '#7f8c8d', '#3d4f63'
 ];
 
-// Comportement d'un pad quand on le touche alors qu'il joue déjà.
+// Comportement d'un pad quand on le touche alors qu'il joue déjà : [icône, libellé court, description].
 export const RETRIGGER = {
-  stop: 'Arrêter',
-  fade: 'Arrêter en fondu',
-  restart: 'Relancer du début',
-  pause: 'Pause / reprise',
-  overlap: 'Superposer une nouvelle lecture'
+  fade: ['◢', 'Fondu', 'Arrêter en fondu'],
+  stop: ['■', 'Arrêt', 'Arrêter net'],
+  restart: ['↺', 'Relancer', 'Relancer du début'],
+  pause: ['❚❚', 'Pause', 'Pause / reprise'],
+  overlap: ['⧉', 'Superposer', 'Lancer une lecture de plus']
 };
 
 // Enchaînement d'une cue par rapport à la précédente.
@@ -60,13 +60,17 @@ export function defaultSound(fileId, name, duration) {
     fadeIn: 0,
     fadeOut: 0,
     loop: false,
-    duck: false,      // baisse les autres sons pendant sa lecture
-    retrigger: 'stop'
+    duck: false       // baisse les autres sons pendant sa lecture
   };
 }
 
 export function newPad(tabId, slot, fileId, name, duration) {
-  return Object.assign(defaultSound(fileId, name, duration), { tabId: tabId, slot: slot });
+  return Object.assign(defaultSound(fileId, name, duration), {
+    tabId: tabId,
+    slot: slot,
+    retrigger: 'fade', // second appui pendant la lecture
+    stopFade: 3        // durée du fondu de ce second appui (s), distincte du fondu de fin de fichier
+  });
 }
 
 export function newCue(kind, fileId, name, duration) {

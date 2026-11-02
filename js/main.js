@@ -10,7 +10,7 @@ import { exportProject, importArchive, deliverFile } from './archive.js';
 import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
 import { setupInstallPrompt } from './install.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -526,7 +526,7 @@ function renderNowPlaying() {
       ),
       h('div', { class: 'np-btns' },
         h('button', { class: 'btn small', text: v.state === 'paused' ? '▶' : '❚❚', title: 'Pause / reprise', onclick: () => { if (v.state === 'paused') v.resume(); else v.pause(); } }),
-        h('button', { class: 'btn small', text: '◢', title: 'Fondu de sortie', onclick: () => v.stop(s.fadeOut || state.project.settings.fadeAll) }),
+        h('button', { class: 'btn small', text: '◢', title: 'Fondu de sortie', onclick: () => v.stop(s.stopFade || s.fadeOut || state.project.settings.fadeAll) }),
         h('button', { class: 'btn small danger', text: '■', title: 'Arrêter', onclick: () => v.stop(0.03) })
       )
     ));

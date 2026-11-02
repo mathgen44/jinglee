@@ -8,13 +8,13 @@ Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le 
 ## Fonctionnalités
 
 - **Pads** : grille de jingles en couleur, organisée en onglets, déclenchés d'un simple toucher.
-  Un second toucher arrête le son, l'arrête en fondu, le relance, le met en pause ou superpose une lecture (au choix pour chaque pad).
+  Un second toucher arrête le son en fondu (3 s par défaut), ou au choix l'arrête net, le relance, le met en pause ou superpose une lecture.
 - **Conduite** avec un grand bouton **GO** : cue en attente surlignée, notes de régie, enchaînements automatiques
   (« avec la précédente » ou « à la fin de la précédente », avec délai), actions « fondu général » et « arrêt général ».
 - **Lignes de texte** dans la conduite (réplique, mouvement, repère) : GO les saute, et le texte qui annonce la cue en attente est surligné.
 - **Mode de transition** dans la barre du haut : superposer les sons, fondu enchaîné (durée réglable) ou couper le précédent.
 - **Bandeau « En cours »** : tous les sons qui jouent, avec temps restant, pause, fondu et arrêt individuels.
-- **Réglages par son** : volume, point de début et de fin, fondu d'entrée et de sortie, boucle, **ducking**
+- **Réglages par son** : volume, points de début et de fin sur une frise avec la forme d'onde, fondu d'entrée et de sortie, boucle, **ducking**
   (baisse automatique des autres sons), arrêt des autres sons au départ d'une cue.
 - **Boutons de sécurité** : FONDU (durée réglable) et STOP général, **verrouillage** du mode spectacle.
 - Trois vues : **Conduite**, **Mixte** (conduite + pads) et **Pads**, en paysage comme en portrait.

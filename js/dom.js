@@ -63,7 +63,7 @@ export function modal(title, body, buttons, opts) {
   const root = document.getElementById('modal-root');
   const box = h('div', { class: 'modal' + (opts.wide ? ' wide' : '') },
     h('div', { class: 'modal-head' },
-      h('h2', { text: title }),
+      typeof title === 'string' ? h('h2', { text: title }) : h('div', { class: 'modal-title' }, title),
       h('button', { class: 'btn icon ghost', 'aria-label': 'Fermer', text: '✕', onclick: () => close() })
     ),
     h('div', { class: 'modal-body' }, body)
