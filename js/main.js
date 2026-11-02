@@ -3,13 +3,13 @@
 import { db, requestPersistence, storageEstimate } from './db.js';
 import { Engine, gainToDb, dbToGain } from './audio.js';
 import { Show } from './show.js';
-import { h, modal, modalOpen, closeTopModal, confirmBox, promptBox, toast, pickFiles, fmtTime, fmtClock, parseNum, numStr } from './dom.js';
+import { h, modal, modalOpen, closeTopModal, confirmBox, promptBox, toast, pickFiles, pickAudio, anyFilePicker, setAnyFilePicker, fmtTime, fmtClock, parseNum, numStr } from './dom.js';
 import { uid, newProject, newPad, newCue, normalizeProject, fileIdsOf, clone, isPlayable, FOLLOW, TRANSITIONS } from './model.js';
 import { openEditor } from './editor.js';
 import { exportProject, importArchive, deliverFile } from './archive.js';
-import { keepAwake, setupAudioSession, isStandalone, isIOS } from './device.js';
+import { keepAwake, keepAwakeStatus, setupAudioSession, isStandalone, isIOS } from './device.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -66,7 +66,7 @@ async function importFile(file) {
   } catch (e) {
     engine.forget(id);
     await db.deleteFile(id);
-    throw new Error('« ' + file.name + ' » : format non pris en charge');
+    throw new Error('« ' + file.name + ' » n’est pas un son lisible sur cet appareil (préférez MP3, M4A ou WAV)');
   }
 }
 
@@ -352,14 +352,14 @@ function freeSlot(tabId) {
 function onEmptySlot(slot) {
   if (state.moving) { dropPad(slot); return; }
   if (state.mode !== 'edit') return;
-  pickFiles('audio/*', false).then(files => {
+  pickAudio(false).then(files => {
     if (!files.length) return;
     importMany(files, f => state.project.pads.push(Object.assign(newPad(state.tabId, slot, f.fileId, f.name, f.duration), { fileName: f.name })));
   });
 }
 
 function addPadsFromFiles() {
-  pickFiles('audio/*', true).then(files => {
+  pickAudio(true).then(files => {
     if (!files.length) return;
     importMany(files, f => {
       const pad = newPad(state.tabId, freeSlot(state.tabId), f.fileId, f.name, f.duration);
@@ -482,7 +482,7 @@ function editorApi(type) {
 }
 
 function addCuesFromFiles() {
-  pickFiles('audio/*', true).then(files => {
+  pickAudio(true).then(files => {
     if (!files.length) return;
     importMany(files, f => {
       const cue = newCue('sound', f.fileId, f.name, f.duration);
@@ -761,7 +761,8 @@ async function doExport(p) {
 }
 
 function doImport(m, projects) {
-  pickFiles('.jinglee,.zip,application/zip,application/octet-stream', false).then(async files => {
+  // iOS ne connaît pas l'extension .jinglee et la grise : pas de filtre, le contenu est vérifié à l'import.
+  pickFiles(isIOS ? '' : '.jinglee,.zip,application/zip', false).then(async files => {
     if (!files.length) return;
     try {
       toast('Import du projet…');
@@ -815,6 +816,8 @@ async function openSettings() {
   const field = (label, ctrl, unit) => h('label', { class: 'field' }, h('span', { text: label }), h('div', { class: 'ctrl' }, ctrl, unit ? h('span', { text: unit }) : null));
 
   const est = await storageEstimate();
+  const anyFile = h('input', { type: 'checkbox', checked: anyFilePicker() });
+  anyFile.addEventListener('change', () => setAnyFilePicker(anyFile.checked));
   const storage = est && est.usage != null
     ? 'Espace utilisé : ' + Math.round(est.usage / 1e6) + ' Mo' + (est.quota ? ' sur ' + Math.round(est.quota / 1e6) + ' Mo disponibles' : '')
     : '';
@@ -829,7 +832,10 @@ async function openSettings() {
       field('Niveau des autres sons pendant un ducking', duck, 'dB'),
       field('Durée de la baisse', duckTime, 's')
     ),
-    storage ? h('p', { class: 'muted small', text: storage }) : null
+    storage ? h('p', { class: 'muted small', text: storage }) : null,
+    h('h3', { text: 'Cet appareil' }),
+    h('label', { class: 'check' }, anyFile, h('span', { text: 'Montrer tous les fichiers à l’import (si vos MP3 apparaissent grisés)' })),
+    h('p', { class: 'muted small', text: 'Anti-veille : ' + keepAwakeStatus() + '. Pour plus de sûreté, réglez aussi le verrouillage automatique de la tablette sur « Jamais ».' })
   ), [
     { label: 'Annuler' },
     { label: 'Enregistrer', class: 'primary', action: () => {
@@ -922,11 +928,12 @@ function bindStatic() {
   $('timer').addEventListener('dblclick', resetTimer);
   document.querySelectorAll('#view-seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 
-  // Premier toucher : déverrouille l'audio (iOS) et empêche la mise en veille.
+  // Chaque toucher : déverrouille l'audio (iOS) et (re)lance l'anti-veille.
   let first = true;
   const unlock = () => {
     engine.unlock();
-    if (first) { first = false; setupAudioSession(); keepAwake(); }
+    keepAwake();
+    if (first) { first = false; setupAudioSession(); }
   };
   document.addEventListener('pointerdown', unlock, true);
   document.addEventListener('touchend', unlock, true);

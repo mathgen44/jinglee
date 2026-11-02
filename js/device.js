@@ -34,15 +34,27 @@ function startVideo() {
   if (p && p.catch) p.catch(() => {});
 }
 
-// Doit être appelé dans un geste utilisateur.
+// À appeler dans chaque geste utilisateur : Safari n'autorise video.play() que dans un geste,
+// et met parfois la vidéo en pause (retour d'arrière-plan, appel…). On la relance donc à chaque toucher.
 export function keepAwake() {
   wanted = true;
-  requestNative().then(ok => { if (!ok) startVideo(); });
+  if (!('wakeLock' in navigator)) {
+    if (!video || video.paused) startVideo();
+    return;
+  }
+  if (!wakeLock) requestNative().then(ok => { if (!ok) startVideo(); });
+}
+
+export function keepAwakeStatus() {
+  if (wakeLock) return 'actif (verrou d’écran du navigateur)';
+  if (video && !video.paused) return 'actif (méthode vidéo, pour les iPad sous iOS 15 et antérieurs)';
+  if (!wanted) return 'en attente du premier toucher';
+  return 'non actif sur cet appareil';
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (wanted && document.visibilityState === 'visible' && !wakeLock) {
-    requestNative().then(ok => { if (!ok && video) startVideo(); });
+  if (wanted && document.visibilityState === 'visible' && !wakeLock && 'wakeLock' in navigator) {
+    requestNative().then(ok => { if (!ok) startVideo(); });
   }
 });
 

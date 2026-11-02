@@ -39,6 +39,9 @@ Jinglee doit être servi en **HTTPS** pour fonctionner hors-ligne. Le plus simpl
   Jinglee essaie déjà d'empêcher la mise en veille, mais ce réglage reste la meilleure garantie.
 - Activez le mode avion ou « Ne pas déranger » pour éviter les notifications sonores.
 - **Exportez** votre projet après chaque modification importante : c'est votre sauvegarde.
+- Import depuis Google Drive ou un autre service : si vos MP3 apparaissent grisés dans le sélecteur,
+  cochez *Menu → Réglages → Montrer tous les fichiers à l'import*. Jinglee vérifie alors lui-même chaque fichier.
+  Pour les projets `.jinglee`, le sélecteur de l'iPad montre toujours tous les fichiers (iOS ne connaît pas cette extension).
 - Préférez des fichiers MP3/AAC/M4A pour les longues pistes. Tous les sons sont décodés en mémoire pour un
   départ instantané ; sur un iPad mini 4 (2 Go de RAM), Jinglee garde environ 350 Mo de sons décodés
   (≈ 30 minutes de stéréo) et recharge les autres à la demande.

@@ -1,6 +1,6 @@
 // Fenêtre de réglage d'un pad ou d'une cue.
 
-import { h, modal, fmtTime, parseNum, numStr, pickFiles, toast } from './dom.js';
+import { h, modal, fmtTime, parseNum, numStr, pickAudio, toast } from './dom.js';
 import { COLORS, RETRIGGER, FOLLOW, CUE_KINDS, clone } from './model.js';
 import { dbToGain, gainToDb } from './audio.js';
 
@@ -60,7 +60,7 @@ export function openEditor(app, original, type) {
   const posLabel = h('span', { class: 'pos-label' });
 
   const replaceBtn = h('button', { class: 'btn', text: item.fileId ? 'Remplacer…' : 'Choisir un fichier…', onclick: () => {
-    pickFiles('audio/*', false).then(files => {
+    pickAudio(false).then(files => {
       if (!files.length) return;
       stopPreview();
       app.importFile(files[0]).then(f => {

@@ -133,10 +133,32 @@ export function toast(msg, kind) {
   toastTimer = setTimeout(() => { el.className = 'toast'; }, kind === 'error' ? 5000 : 2500);
 }
 
+// Types audio proposés au sélecteur de fichiers. Les extensions explicites aident iOS :
+// avec « audio/* » seul, certains services (Google Drive…) affichent les MP3 grisés.
+const AUDIO_ACCEPT = [
+  '.mp3', '.m4a', '.aac', '.mp4', '.wav', '.aif', '.aiff', '.caf', '.flac', '.ogg', '.oga', '.opus',
+  'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/wav', 'audio/x-wav',
+  'audio/aiff', 'audio/x-aiff', 'audio/x-caf', 'audio/flac', 'audio/ogg', 'audio/*'
+].join(',');
+
+// Réglage de l'appareil : sans filtre, le sélecteur montre tous les fichiers (repli si l'audio apparaît grisé).
+export function anyFilePicker() {
+  try { return localStorage.getItem('jinglee.anyFile') === '1'; } catch (e) { return false; }
+}
+
+export function setAnyFilePicker(on) {
+  try { localStorage.setItem('jinglee.anyFile', on ? '1' : '0'); } catch (e) { /* stockage indisponible */ }
+}
+
+export function pickAudio(multiple) {
+  return pickFiles(anyFilePicker() ? '' : AUDIO_ACCEPT, multiple);
+}
+
 // Ouvre le sélecteur de fichiers du système (doit être appelé dans un geste utilisateur).
+// accept vide : aucun filtre.
 export function pickFiles(accept, multiple) {
   return new Promise(resolve => {
-    const input = h('input', { type: 'file', accept: accept, style: { display: 'none' } });
+    const input = h('input', { type: 'file', accept: accept || null, style: { display: 'none' } });
     if (multiple) input.multiple = true;
     input.addEventListener('change', () => {
       resolve(Array.from(input.files || []));
