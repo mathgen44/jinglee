@@ -74,9 +74,12 @@ Le numéro de version est indiqué en bas du menu ☰.
   Pour aller plus vite, copiez d'abord vos sons dans *Fichiers → Sur mon iPad*, ou préparez le projet sur un ordinateur
   et importez le fichier `.jinglee` sur la tablette.
   Si vos MP3 apparaissent grisés dans le sélecteur, cochez *Menu → Réglages → Montrer tous les fichiers à l'import*.
-- Préférez des fichiers MP3/AAC/M4A pour les longues pistes. Tous les sons sont décodés en mémoire pour un
-  départ instantané ; sur un iPad mini 4 (2 Go de RAM), Jinglee garde environ 350 Mo de sons décodés
-  (≈ 30 minutes de stéréo) et recharge les autres à la demande.
+- Les sons sont décodés en mémoire pour un départ instantané, dans une limite stricte (200 Mo sur iPad,
+  soit environ 18 minutes de stéréo ; 350 Mo ailleurs). Restent prêts en priorité la cue en attente et les
+  suivantes, puis les pads de l'onglet affiché, des plus courts aux plus longs. Un son qui n'a pas pu être gardé
+  est rechargé quand on le joue : une à deux secondes pour un long morceau sur un iPad ancien.
+  L'occupation est visible dans *Menu → Réglages*. Pour un spectacle chargé, répartissez les longs morceaux
+  sur plusieurs onglets ou mettez-les dans la conduite.
 
 ## Développement
 

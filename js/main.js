@@ -12,7 +12,7 @@ import { setupInstallPrompt } from './install.js';
 import { showProgress, closeProgress } from './progress.js';
 import { installErrorHandlers, buildReport, issueUrl, copyText, clearErrors, getErrors } from './report.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 
 function pref(key, def) {
   try { const v = localStorage.getItem('jinglee.' + key); return v == null ? def : v; } catch (e) { return def; }
@@ -32,6 +32,9 @@ const state = {
 };
 
 const engine = new Engine(id => db.getFile(id).then(f => f && f.data));
+// Un son de 4 minutes décodé occupe environ 90 Mo. Les iPad anciens (2 Go de mémoire)
+// rechargent la page bien avant d'arriver à 1 Go : on reste nettement en dessous.
+engine.budget = isIOS ? 200e6 : 350e6;
 const show = new Show(engine, () => state.project, () => { renderCues(); warmCache(); }, msg => toast(msg, 'error'));
 
 const $ = id => document.getElementById(id);
@@ -139,11 +142,16 @@ function warmCache() {
   warmTimer = setTimeout(() => {
     const p = state.project;
     if (!p) return;
+    // Ordre de priorité : la cue en attente et les suivantes, puis les pads de l'onglet affiché,
+    // les plus courts d'abord (un jingle doit partir à l'instant et coûte peu de mémoire ;
+    // un long morceau qui n'a pas pu être gardé met une à deux secondes à partir).
+    // Le reste du projet n'est pas préchargé : il est décodé au moment de le jouer.
     const ids = [];
-    p.cues.slice(show.standby, show.standby + 4).forEach(c => c.fileId && ids.push(c.fileId));
-    p.pads.filter(x => x.tabId === state.tabId).forEach(x => x.fileId && ids.push(x.fileId));
-    engine.pinned = new Set(ids);
-    engine.preload(ids).then(() => engine.preload(Array.from(fileIdsOf(p))));
+    p.cues.slice(show.standby).filter(c => c.fileId).slice(0, 4).forEach(c => ids.push(c.fileId));
+    p.pads.filter(x => x.tabId === state.tabId && x.fileId)
+      .sort((a, b) => (a.duration || 0) - (b.duration || 0))
+      .forEach(x => ids.push(x.fileId));
+    engine.setPriority(ids);
   }, 200);
 }
 
@@ -475,9 +483,9 @@ function editorApi(type) {
       } else if (i >= 0) {
         arr[i] = item;
       }
-      if (item.fileId) engine.pinned.add(item.fileId);
       save();
       render();
+      warmCache();
     },
     onDelete: item => {
       const arr = list();
@@ -870,7 +878,8 @@ async function openSettings() {
     storage ? h('p', { class: 'muted small', text: storage }) : null,
     h('h3', { text: 'Cet appareil' }),
     h('label', { class: 'check' }, anyFile, h('span', { text: 'Montrer tous les fichiers à l’import (si vos MP3 apparaissent grisés)' })),
-    h('p', { class: 'muted small', text: 'Anti-veille : ' + keepAwakeStatus() + '. Pour plus de sûreté, réglez aussi le verrouillage automatique de la tablette sur « Jamais ».' })
+    h('p', { class: 'muted small', text: 'Anti-veille : ' + keepAwakeStatus() + '. Pour plus de sûreté, réglez aussi le verrouillage automatique de la tablette sur « Jamais ».' }),
+    h('p', { class: 'muted small', text: 'Sons prêts en mémoire : ' + memoryText() + '. Au-delà, les sons les moins prioritaires sont rechargés au moment de les jouer (une à deux secondes pour un long morceau).' })
   ), [
     { label: 'Annuler' },
     { label: 'Enregistrer', class: 'primary', action: () => {
@@ -886,6 +895,10 @@ async function openSettings() {
   ], { wide: true });
 }
 
+function memoryText() {
+  return engine.cache.size + ' son(s), ' + Math.round(engine.cacheBytes() / 1e6) + ' Mo sur ' + Math.round(engine.budget / 1e6) + ' Mo';
+}
+
 // Rapport de problème : l'utilisateur voit tout ce qui sera envoyé (aucun nom de projet ni de fichier).
 async function openReport() {
   const p = state.project;
@@ -895,7 +908,8 @@ async function openReport() {
     standalone: isStandalone(),
     project: p.pads.length + ' pads, ' + p.cues.length + ' cues, ' + p.tabs.length + ' onglet(s)',
     storage: est && est.usage != null ? Math.round(est.usage / 1e6) + ' Mo utilisés' + (est.quota ? ' sur ' + Math.round(est.quota / 1e6) + ' Mo' : '') : '',
-    keepAwake: keepAwakeStatus()
+    keepAwake: keepAwakeStatus(),
+    memory: memoryText()
   };
   const title = h('input', { class: 'input', type: 'text', placeholder: 'Ex. : l’import depuis Google Drive ne fait rien' });
   const desc = h('textarea', { class: 'input', rows: 4, placeholder: 'Que faisiez-vous ? Qu’attendiez-vous ? Que s’est-il passé à la place ?' });

@@ -87,6 +87,7 @@ export function buildReport(description, ctx) {
     '- Anti-veille : ' + ctx.keepAwake
   ];
   if (ctx.storage) lines.push('- Stockage : ' + ctx.storage);
+  if (ctx.memory) lines.push('- Sons en mémoire : ' + ctx.memory);
   lines.push('', '### Dernières erreurs', '');
   if (!errs.length) lines.push('Aucune erreur enregistrée.');
   errs.slice().reverse().forEach(e => lines.push('- `' + fmtDate(e.t) + '` ' + e.m + (e.s ? ' _(' + e.s + ')_' : '')));

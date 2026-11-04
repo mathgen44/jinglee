@@ -1,6 +1,7 @@
 // Moteur audio basé sur la Web Audio API.
 // Chaque lecture est une « voix » : source -> enveloppe (fondus) -> ducking -> master.
-// Les fichiers sont décodés en mémoire pour un départ instantané, avec un cache limité.
+// Les fichiers sont décodés en mémoire pour un départ instantané, avec un cache limité :
+// au-delà du budget, les sons les moins prioritaires sont libérés et rechargés à la demande.
 
 const AC = window.AudioContext || window.webkitAudioContext;
 
@@ -228,8 +229,8 @@ export class Engine {
     this.voices = [];
     this.cache = new Map();   // fileId -> { buffer, bytes, used }
     this.pending = new Map(); // fileId -> Promise<AudioBuffer>
-    this.pinned = new Set();
-    this.budget = 350e6;      // octets de PCM décodé gardés en mémoire
+    this.priority = [];       // fileIds à garder prêts, du plus important au moins important
+    this.budget = 350e6;      // octets de PCM décodé gardés en mémoire (limite stricte)
     this.duckLevel = 0.3;
     this.duckTime = 0.5;
     this.listeners = {};
@@ -295,28 +296,58 @@ export class Engine {
     });
   }
 
-  // Décode à l'avance, un fichier à la fois pour limiter les pics de mémoire.
-  preload(fileIds) {
-    const ids = Array.from(fileIds).filter(id => id && !this.cache.has(id));
-    return ids.reduce((chain, id) => chain.then(() => this.load(id).catch(() => null)), Promise.resolve());
+  // Décode à l'avance les sons prioritaires, un fichier à la fois pour limiter les pics de mémoire.
+  // On s'arrête dès que la mémoire est pleine : décoder la suite ne ferait que chasser les sons
+  // plus importants (ou être aussitôt libéré).
+  setPriority(fileIds) {
+    const seen = new Set();
+    this.priority = Array.from(fileIds).filter(id => id && !seen.has(id) && seen.add(id));
+    const gen = this._gen = (this._gen || 0) + 1;
+    const next = i => {
+      if (gen !== this._gen || i >= this.priority.length) return Promise.resolve();
+      const id = this.priority[i];
+      return this.load(id).catch(() => null).then(() => {
+        if (!this.cache.has(id)) return;
+        return next(i + 1);
+      });
+    };
+    this._evict();
+    return next(0);
   }
 
   forget(fileId) { this.cache.delete(fileId); }
   clearCache() { this.cache.clear(); }
 
+  // Respecte strictement le budget : on libère d'abord les sons hors priorité (les plus anciens),
+  // puis les sons prioritaires en partant des moins importants. Seuls les sons en cours de lecture
+  // sont gardés quoi qu'il arrive.
   _evict() {
     let total = 0;
     this.cache.forEach(c => { total += c.bytes; });
     if (total <= this.budget) return;
     const inUse = new Set(this.voices.map(v => v.sound.fileId));
+    const rank = new Map(this.priority.map((id, i) => [id, i]));
     const entries = Array.from(this.cache.entries())
-      .filter(([id]) => !inUse.has(id) && !this.pinned.has(id))
-      .sort((a, b) => a[1].used - b[1].used);
+      .filter(([id]) => !inUse.has(id))
+      .sort((a, b) => {
+        const ra = rank.has(a[0]) ? rank.get(a[0]) : -1;
+        const rb = rank.has(b[0]) ? rank.get(b[0]) : -1;
+        if (ra < 0 && rb < 0) return a[1].used - b[1].used;
+        if (ra < 0 || rb < 0) return ra < 0 ? -1 : 1;
+        return rb - ra;
+      });
     for (const [id, c] of entries) {
       if (total <= this.budget) break;
       this.cache.delete(id);
       total -= c.bytes;
     }
+  }
+
+  // Mémoire occupée par les sons décodés (octets), pour l'affichage dans les réglages.
+  cacheBytes() {
+    let total = 0;
+    this.cache.forEach(c => { total += c.bytes; });
+    return total;
   }
 
   // prepare() est appelé une fois le son chargé, juste avant son départ
@@ -328,6 +359,11 @@ export class Engine {
       if (prepare) sound = prepare() || sound;
       const v = new Voice(this, sound, buffer, meta);
       this.voices.push(v);
+      // Un son en cours reste en cache (la mémoire est occupée de toute façon) :
+      // le relancer est instantané. Il sera libéré à la fin de la lecture si besoin.
+      if (!this.cache.has(sound.fileId)) {
+        this.cache.set(sound.fileId, { buffer, bytes: buffer.length * buffer.numberOfChannels * 4, used: Date.now() });
+      }
       v.play(0);
       return v;
     });
@@ -358,6 +394,7 @@ export class Engine {
   _ended(v, natural) {
     const i = this.voices.indexOf(v);
     if (i >= 0) this.voices.splice(i, 1);
+    this._evict();
     this._updateDuck();
     this.emit('end', v, natural);
     this.emit('change');
