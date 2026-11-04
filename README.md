@@ -49,6 +49,34 @@ Jinglee est une application web installable (PWA) : on l'ouvre une fois dans le 
 > Sur iOS, l'application installée et Safari ont des données séparées : importez vos sons depuis l'application installée
 > (ou exportez votre projet depuis Safari et réimportez-le dans l'application).
 
+## Version pour ordinateur (Windows, Mac)
+
+Jinglee existe aussi en application à installer, pratique pour une régie sur ordinateur portable :
+mêmes fonctions, aucune connexion nécessaire, pas de mise en veille de l'écran tant que Jinglee est ouvert,
+et beaucoup plus de sons gardés prêts en mémoire (jusqu'à 2 Go selon l'ordinateur).
+
+**👉 [Dernière version pour ordinateur](https://github.com/mathgen44/jinglee/releases/latest)**
+
+| Ordinateur | Fichier à prendre |
+|---|---|
+| Windows 10 ou 11 | `Jinglee-…-Windows-installation.exe` |
+| Windows, sans rien installer (clé USB, ordinateur prêté) | `Jinglee-…-Windows-portable.exe` |
+| Mac (Intel ou Apple Silicon), macOS 12 ou plus récent | `Jinglee-…-Mac.dmg` |
+| Mac plus ancien : macOS 10.13 High Sierra à macOS 11 Big Sur | `Jinglee-…-Mac-ancien.dmg` |
+
+- **Windows** : si Windows affiche « Windows a protégé votre ordinateur », cliquez sur **Informations complémentaires**
+  puis **Exécuter quand même** (ce message apparaît pour les logiciels gratuits sans certificat Microsoft payant).
+- **Mac** : ouvrez le `.dmg` et glissez Jinglee dans Applications. Au premier lancement, macOS le bloque car il
+  n'est pas enregistré auprès d'Apple (c'est payant) :
+  - macOS 15 et plus récent : *Réglages Système → Confidentialité et sécurité* → **Ouvrir quand même** ;
+  - macOS 14 et plus ancien : **Ctrl + clic** sur Jinglee dans Applications → **Ouvrir**.
+
+  Si macOS indique que Jinglee « est endommagé », ouvrez le Terminal et lancez `xattr -cr /Applications/Jinglee.app`.
+
+Les projets se transportent entre tablette et ordinateur avec l'export `.jinglee` (*Menu ☰ → Exporter*) ;
+sur ordinateur, un double-clic sur un fichier `.jinglee` l'ouvre dans Jinglee.
+Au lancement, Jinglee signale s'il existe une nouvelle version ; rien ne s'installe tout seul.
+
 ### Signaler un problème
 
 *Menu ☰ → Signaler un problème* prépare un rapport : votre description, la version de Jinglee, l'appareil,
@@ -95,6 +123,20 @@ Le service worker (cache hors-ligne) n'est activé qu'en HTTPS, donc pas en loca
 changez la constante `CACHE` dans `sw.js` (et `VERSION` dans `js/main.js`) : c'est ce qui déclenche la mise à jour
 sur les appareils déjà installés.
 
+L'application de bureau reprend ces mêmes fichiers dans une fenêtre Electron (dossier `desktop/`, Node.js 22) :
+
+```bash
+npm install
+npm start          # lancer l'application
+npm run selftest   # test de démarrage automatique (capture dans selftest-out/)
+npm run dist:win   # construire l'installateur Windows dans dist/
+```
+
+Pour publier une version pour ordinateur, mettez le même numéro dans `package.json` que dans `js/main.js`,
+puis poussez une étiquette : `git tag v1.5.1 && git push origin v1.5.1`. GitHub construit alors les fichiers
+Windows et Mac et les publie dans les [versions](https://github.com/mathgen44/jinglee/releases)
+(`.github/workflows/release.yml`).
+
 | Fichier | Rôle |
 |---|---|
 | `js/audio.js` | Moteur Web Audio : décodage, cache, voix, fondus, ducking |
@@ -107,6 +149,7 @@ sur les appareils déjà installés.
 | `js/archive.js`, `js/zip.js` | Export / import `.jinglee` |
 | `js/device.js` | Anti-veille, session audio iOS |
 | `js/install.js` | Bandeau d'invitation à installer |
+| `desktop/` | Application de bureau (Electron) : fenêtre, accès aux fichiers, mises à jour |
 | `tools/make_assets.py` | Génère les icônes et `js/media.js` |
 | `tools/screenshots.py` | Régénère les captures de `docs/` (ffmpeg + Chrome) |
 

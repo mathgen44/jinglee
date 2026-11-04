@@ -34,7 +34,8 @@ const state = {
 const engine = new Engine(id => db.getFile(id).then(f => f && f.data));
 // Un son de 4 minutes décodé occupe environ 90 Mo. Les iPad anciens (2 Go de mémoire)
 // rechargent la page bien avant d'arriver à 1 Go : on reste nettement en dessous.
-engine.budget = isIOS ? 200e6 : 350e6;
+// L'application de bureau fixe sa propre limite d'après la mémoire de l'ordinateur.
+engine.budget = window.jingleeDesktop ? window.jingleeDesktop.memoryBudget : isIOS ? 200e6 : 350e6;
 const show = new Show(engine, () => state.project, () => { renderCues(); warmCache(); }, msg => toast(msg, 'error'));
 
 const $ = id => document.getElementById(id);
@@ -1092,6 +1093,42 @@ async function boot() {
     state.tabId = state.project.tabs[0].id;
     render();
   }
+  if (window.jingleeDesktop) setupDesktop(window.jingleeDesktop);
+}
+
+// ---------- Application de bureau (Windows, Mac) ----------
+
+function setupDesktop(desk) {
+  // Projet .jinglee ouvert par double-clic.
+  desk.onOpenProject(async file => {
+    try {
+      showProgress('Import du projet', file.name, 'Lecture et enregistrement des sons…', null);
+      const projects = await db.listProjects();
+      const p = await importArchive(new Blob([file.data]), new Set(projects.map(x => x.id)));
+      closeProgress();
+      await openProject(p);
+      toast('Projet « ' + p.name + ' » importé');
+    } catch (e) {
+      closeProgress();
+      toast('Import impossible : ' + e.message, 'error');
+    }
+  });
+  desk.onCloseRequested(async () => {
+    if (engine.activeVoices().length && !await confirmBox('Quitter Jinglee', 'Des sons sont en cours de lecture. Quitter quand même ?', 'Quitter', true)) return;
+    await flushSave().catch(() => {});
+    desk.confirmClose();
+  });
+  desk.ready();
+  // Nouvelle version : on propose seulement le téléchargement, jamais d'installation automatique.
+  desk.checkUpdates().then(r => {
+    if (!r || r.status !== 'available' || document.querySelector('.update-banner')) return;
+    const bar = h('div', { class: 'update-banner' },
+      h('span', { text: 'Jinglee ' + r.version + ' est disponible (vous avez la ' + r.current + ').' }),
+      h('button', { class: 'btn small primary', text: 'Télécharger', onclick: () => { desk.openExternal(r.url); bar.remove(); } }),
+      h('button', { class: 'btn small ghost', text: 'Plus tard', onclick: () => bar.remove() })
+    );
+    document.body.appendChild(bar);
+  }, () => {});
 }
 
 boot();

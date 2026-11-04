@@ -1,0 +1,75 @@
+# Construit l'application de bureau Jinglee pour Windows et Mac et publie les fichiers dans une version GitHub.
+# Déclenchement : pousser une étiquette de version, par exemple
+#   git tag v1.5.1 && git push origin v1.5.1
+# (le numéro doit correspondre au champ "version" de package.json).
+#
+# La version est d'abord créée en brouillon ; elle n'est publiée (et donc proposée
+# aux utilisateurs par la recherche de mises à jour) que si Windows et Mac sont prêts.
+# L'application web (GitHub Pages) n'est pas concernée : elle est publiée à chaque envoi sur main.
+name: Publier une version
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Créer la version en brouillon
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Jinglee ${GITHUB_REF_NAME#v}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: draft
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Construire et envoyer les fichiers
+        run: npx electron-builder --publish always
+        env:
+          # Sans certificat Apple, l'app Mac reçoit une signature « ad hoc » (package.json, mac.identity).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Édition « macOS ancien » (10.13 High Sierra à 11) : Electron 26, Mac Intel.
+  build-mac-ancien:
+    needs: draft
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Construire et envoyer l'image disque
+        run: npx electron-builder --mac --config electron-builder-legacy.js --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: [build, build-mac-ancien]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publier la version
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

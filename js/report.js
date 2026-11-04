@@ -54,7 +54,8 @@ export function deviceInfo() {
   else if (/Mac OS X/.test(ua)) os = 'macOS';
   else if (/Linux/.test(ua)) os = 'Linux';
   let browser = '';
-  if (/CriOS/.test(ua)) browser = 'Chrome iOS';
+  if (window.jingleeDesktop) browser = 'Application de bureau ' + window.jingleeDesktop.version;
+  else if (/CriOS/.test(ua)) browser = 'Chrome iOS';
   else if (/FxiOS/.test(ua)) browser = 'Firefox iOS';
   else if (/Edg\//.test(ua)) browser = 'Edge';
   else if (chrome) browser = 'Chrome ' + chrome[1].split('.')[0];

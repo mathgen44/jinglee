@@ -38,6 +38,7 @@ function startVideo() {
 // et met parfois la vidéo en pause (retour d'arrière-plan, appel…). On la relance donc à chaque toucher.
 export function keepAwake() {
   wanted = true;
+  if (window.jingleeDesktop) return; // l'application de bureau empêche elle-même la veille
   if (!('wakeLock' in navigator)) {
     if (!video || video.paused) startVideo();
     return;
@@ -46,6 +47,7 @@ export function keepAwake() {
 }
 
 export function keepAwakeStatus() {
+  if (window.jingleeDesktop) return 'actif (application de bureau)';
   if (wakeLock) return 'actif (verrou d’écran du navigateur)';
   if (video && !video.paused) return 'actif (méthode vidéo, pour les iPad sous iOS 15 et antérieurs)';
   if (!wanted) return 'en attente du premier toucher';
@@ -72,7 +74,7 @@ export function setupAudioSession() {
 }
 
 export function isStandalone() {
-  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  return !!window.jingleeDesktop || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 }
 
 export { isIOS };

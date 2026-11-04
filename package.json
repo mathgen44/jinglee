@@ -1,0 +1,81 @@
+{
+  "name": "jinglee",
+  "productName": "Jinglee",
+  "version": "1.5.1",
+  "description": "Lecteur de jingles et de conduites sonores pour le théâtre et le podcast.",
+  "main": "desktop/main.js",
+  "author": "Hervé Sevellec",
+  "license": "MIT",
+  "private": true,
+  "repository": "github:mathgen44/jinglee",
+  "scripts": {
+    "start": "electron .",
+    "selftest": "electron . --selftest",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:mac-ancien": "electron-builder --mac --config electron-builder-legacy.js"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "fr.jinglee.app",
+    "productName": "Jinglee",
+    "icon": "icons/icon-512.png",
+    "files": [
+      "index.html",
+      "manifest.webmanifest",
+      "css/**/*",
+      "js/**/*",
+      "icons/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "jinglee",
+        "name": "Projet Jinglee",
+        "role": "Editor"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mathgen44",
+        "repo": "jinglee",
+        "releaseType": "draft"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Jinglee-${version}-Windows-installation.${ext}"
+    },
+    "portable": {
+      "artifactName": "Jinglee-${version}-Windows-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "artifactName": "Jinglee-${version}-Mac.${ext}"
+    }
+  }
+}
